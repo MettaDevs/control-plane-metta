@@ -76,4 +76,4 @@ Siapa pun bisa membaca isi repo ini, termasuk berkas yang sudah dihapus, karena 
 ## Skill
 
 - Setiap skill ada di `.agents/skills/` dan `.claude/skills/` dengan isi yang sama persis, karena kedua folder dibaca alat yang berbeda. Ubah keduanya dalam commit yang sama.
-- `coreerp-bun-elysia` disalin apa adanya dari CoreERP. Path `docs/...` di dalamnya menunjuk ke repo CoreERP. Kalimat di skill itu yang menyebut nama dan pembagian repo baru belum diputuskan ditulis sebelum repo ini dibuat. Pembagiannya sekarang tertulis di bagian atas berkas ini.
+- `coreerp-bun-elysia` disalin apa adanya dari CoreERP. Path `docs/...` di dalamnya menunjuk ke repo CoreERP. Bila skill itu berubah di CoreERP, salin ulang ke kedua folder di sini.

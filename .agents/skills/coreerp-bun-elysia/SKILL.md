@@ -5,12 +5,14 @@ description: Carry the measured Bun + Elysia runtime setup and database rules in
 
 # Bun + Elysia for CoreERP's new repositories
 
-On 4 November 2026 the product owner chose Bun + Elysia for every new repository. Two new repositories are planned;
-their names and how ERP, Praktik Dokter, and the control plane are split between them are not decided yet. Do not
-invent either.
+On 4 November 2026 the product owner chose Bun + Elysia for every new repository. There are two:
+`operations-metta` (the runtime clinics use, SaaS and on-prem: ERP, then Praktik Dokter) and `control-plane-metta`
+(onboarding, the Praktik Dokter trial, tenants, environments, releases and the server agent, with an internal operator
+console and a customer portal deployed separately). Each repository's `AGENTS.md` holds its own rules.
 
-The decision, the measurements behind it, and their limits are in `docs/dev/39-pindah-ke-bun-elysia.md`. Read it before
-changing anything below. This skill only lists what an agent gets wrong without it.
+The decision, the measurements behind it, and their limits are in CoreERP's `docs/dev/39-pindah-ke-bun-elysia.md`.
+Every `docs/...` path in this skill is in the CoreERP repository. Read that page before changing anything below. This
+skill only lists what an agent gets wrong without it.
 
 ## CoreERP stays the reference
 
@@ -35,6 +37,10 @@ them; never fix them silently.
 
 ## Database rules
 
+- Number sequences only where people use the code (owner decision, 4 November 2026). The engine stays as it is.
+  Automatic numbers are for transaction documents and main masters searched by code, such as assets. Small setup
+  masters get no number sequence: a short user-typed code like Business Central's `Code` field when people type or
+  filter by it, otherwise only a name and an internal id. Decide per master when it is ported.
 - Never cast a parameter to a type other than its column's: `= any($1::text[])` against `char(26)` ids drops the index.
 - Every commit costs one fsync. On a slow disk that is the ceiling, not CPU. Read requests write nothing unless they
   must; sessions live in Valkey as in `docs/dev/36-cache-and-sessions.md`. Valkey `appendfsync always` moves the fsync
