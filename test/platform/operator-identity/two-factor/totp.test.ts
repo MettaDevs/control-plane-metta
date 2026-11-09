@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { codeAt, matchingStep, newSecret, otpauthUri, stepAt } from './totp.ts';
+import {
+    codeAt,
+    matchingStep,
+    newSecret,
+    otpauthUri,
+    stepAt,
+} from '../../../../src/platform/operator-identity/two-factor/totp.ts';
 
 // Vektor uji RFC 6238 lampiran B untuk SHA1, secret ASCII "12345678901234567890". RFC memakai delapan digit; enam
 // digit terakhirnya adalah kode enam digit.

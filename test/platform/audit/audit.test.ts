@@ -1,8 +1,12 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import { z } from 'zod';
-import { loadConfig } from '../config/index.ts';
-import { createPool, Database, sqlErrorCode } from '../database/index.ts';
-import { recordAudit } from './index.ts';
+import { loadConfig } from '../../../src/platform/config/index.ts';
+import {
+    createPool,
+    Database,
+    sqlErrorCode,
+} from '../../../src/platform/database/index.ts';
+import { recordAudit } from '../../../src/platform/audit/index.ts';
 
 // Butuh PostgreSQL yang sudah dimigrasi. CI selalu menyediakannya; di laptop test ini dilewati bila DB_HOST kosong.
 describe.skipIf(!process.env.DB_HOST)('operator audit', () => {

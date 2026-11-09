@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { SsoSettings } from '../config/index.ts';
+import type { SsoSettings } from '../../config/index.ts';
 
 // Klien OpenID Connect untuk login operator: alur kode otorisasi dengan PKCE S256, ID token RS256 yang diverifikasi
 // terhadap JWKS penyedia, dan logout token dari back-channel logout. Tidak memakai library JWT; yang diperiksa

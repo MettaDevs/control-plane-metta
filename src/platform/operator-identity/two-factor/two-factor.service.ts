@@ -1,9 +1,9 @@
 import { randomInt } from 'node:crypto';
 import { z } from 'zod';
-import { recordAudit } from '../audit/index.ts';
-import type { Database } from '../database/index.ts';
-import { HttpFailure } from '../http/index.ts';
-import type { SecretBox } from './secret-box.ts';
+import { recordAudit } from '../../audit/index.ts';
+import type { Database } from '../../database/index.ts';
+import { HttpFailure } from '../../http/index.ts';
+import type { SecretBox } from '../secret-box.ts';
 import { matchingStep, newSecret } from './totp.ts';
 
 type Actor = { operatorId: string; ipAddress: string };

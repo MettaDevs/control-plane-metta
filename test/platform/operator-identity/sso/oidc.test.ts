@@ -1,6 +1,10 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { OidcProvider, pkceChallenge, SsoFailure } from './oidc.ts';
-import { OidcStub } from './oidc.stub.ts';
+import {
+    OidcProvider,
+    pkceChallenge,
+    SsoFailure,
+} from '../../../../src/platform/operator-identity/sso/oidc.ts';
+import { OidcStub } from '../../../support/oidc-provider.ts';
 
 describe('oidc provider', () => {
     let stub: OidcStub;

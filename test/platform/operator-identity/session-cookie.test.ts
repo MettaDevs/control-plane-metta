@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test';
-import { readCookie, readSession, signSession } from './session-cookie.ts';
+import {
+    readCookie,
+    readSession,
+    signSession,
+} from '../../../src/platform/operator-identity/session-cookie.ts';
 
 const key = Buffer.alloc(32, 1);
 const payload = {
