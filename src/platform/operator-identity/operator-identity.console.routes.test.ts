@@ -15,10 +15,7 @@ describe.skipIf(!process.env.DB_HOST)('operator login', () => {
         APP_KEY: 'base64:' + Buffer.alloc(32, 3).toString('base64'),
         SESSION_SECURE_COOKIE: 'false',
     });
-    const application = createApplication(
-        config,
-        operatorRoutes(config).routes,
-    );
+    const application = createApplication(config, operatorRoutes(config));
     const pool = createPool(config);
     const email = `operator-${crypto.randomUUID()}@example.com`;
     const password = 'correct horse battery staple';

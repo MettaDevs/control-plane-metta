@@ -1,22 +1,19 @@
 import { z } from 'zod';
 import type { Config } from '../config/index.ts';
-import { base, type Context, HttpFailure } from '../http/index.ts';
-import { RateLimiter } from '../rate-limit/index.ts';
+import { HttpFailure } from '../http/index.ts';
 import {
     authenticate,
-    confirmPassword,
     findSessionOperator,
-    type Operator,
     revokeSessions,
     twoFactorEnabled,
 } from './operator.service.ts';
 import { SecretBox } from './secret-box.ts';
 import {
-    type CookiePurpose,
-    readCookie,
-    readSession,
-    signSession,
-} from './session-cookie.ts';
+    type ConsoleSession,
+    consoleSession,
+    guardAttempts,
+    twoFactorWindowSeconds,
+} from './session.console.ts';
 import { otpauthUri } from './totp.ts';
 import {
     confirmEnrollment,
@@ -30,138 +27,21 @@ const loginInput = z.object({
 });
 const codeInput = z.object({ body: z.object({ code: z.string() }) });
 const passwordInput = z.object({ body: z.object({ password: z.string() }) });
-const attemptLimit = { maxAttempts: 5, decaySeconds: 60 };
-// Sama dengan konsol CoreERP: kode 2FA harus dimasukkan dalam lima menit sesudah password benar.
-const twoFactorWindowSeconds = 5 * 60;
-const unsafeMethods = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
-// Percobaan yang gagal dihitung per kunci; hasil percobaan yang berhasil dikembalikan.
-async function guardAttempts<T>(
-    context: Context,
-    key: string,
-    attempt: () => Promise<T | null | false>,
-    failure: object,
-): Promise<T> {
-    const limiter = new RateLimiter(context.db, attemptLimit);
-    const retryAfter = await limiter.retryAfter(key);
-    if (retryAfter !== null)
-        throw new HttpFailure(
-            429,
-            {
-                message: `Terlalu banyak percobaan. Coba lagi dalam ${retryAfter} detik.`,
-            },
-            { 'Retry-After': String(retryAfter) },
-        );
-    const result = await attempt();
-    if (result === null || result === false) {
-        await limiter.hit(key);
-        throw new HttpFailure(422, failure);
-    }
-    await limiter.clear(key);
-    return result;
-}
-
-export function operatorRoutes(config: Config) {
-    const box = new SecretBox(config.key);
-    const cookieName = (purpose: CookiePurpose) =>
-        purpose === 'session'
-            ? config.SESSION_COOKIE
-            : `${config.SESSION_COOKIE}_two_factor`;
-
-    function setCookie(
-        context: Context,
-        purpose: CookiePurpose,
-        value: string,
-        maxAge: number,
-    ) {
-        const secure =
-            config.SESSION_SECURE_COOKIE === 'true' ? '; Secure' : '';
-        context.setCookies.push(
-            `${cookieName(purpose)}=${value}; Path=/; Max-Age=${maxAge}; HttpOnly; SameSite=Strict${secure}`,
-        );
-    }
-
-    function issue(
-        context: Context,
-        purpose: CookiePurpose,
-        operatorId: string,
-        seconds: number,
-        issuedAt = Date.now(),
-    ) {
-        setCookie(
-            context,
-            purpose,
-            signSession(
-                config.key,
-                {
-                    operatorId,
-                    issuedAt,
-                    expiresAt: Date.now() + seconds * 1000,
-                },
-                purpose,
-            ),
-            seconds,
-        );
-    }
-
-    const read = (context: Context, purpose: CookiePurpose) => {
-        const value = readCookie(context.request, cookieName(purpose));
-        return value
-            ? readSession(config.key, value, Date.now(), purpose)
-            : null;
-    };
-
-    // Cookie sesi SameSite=Strict, dan setiap request yang mengubah sesuatu wajib JSON. Form dari situs lain tidak bisa
-    // mengirim JSON tanpa preflight CORS, yang tidak pernah diizinkan konsol.
-    const consoleBase = base.use(({ context, next }) => {
-        const type = context.request.headers.get('content-type') ?? '';
-        if (
-            unsafeMethods.has(context.request.method) &&
-            !/^application\/json\b/i.test(type)
-        )
-            throw new HttpFailure(415, {
-                message: 'Kirim permintaan ini sebagai JSON.',
-            });
-        return next();
-    });
-
-    // Setiap akun di tabel operators adalah operator, jadi yang tidak punya sesi sah mendapat 401. Tidak ada akun
-    // customer yang bisa login di sini untuk menerima 403.
-    const operatorProcedure = consoleBase.use(async ({ context, next }) => {
-        const session = read(context, 'session');
-        const operator = session
-            ? await findSessionOperator(
-                  context.db,
-                  session.operatorId,
-                  session.issuedAt,
-              )
-            : null;
-        if (!session || !operator)
-            throw new HttpFailure(401, { message: 'Unauthenticated.' });
-        // Masa sesi diperpanjang di setiap request, sama dengan sesi konsol CoreERP; waktu login tetap.
-        issue(
-            context,
-            'session',
-            operator.id,
-            config.SESSION_LIFETIME * 60,
-            session.issuedAt,
-        );
-        return next({ context: { operator, session } });
-    });
-
-    const confirmed = async (
-        context: Context & { operator: Operator },
-        password: string,
-    ) =>
-        guardAttempts(
-            context,
-            `console-confirm:${context.operator.id}|${context.clientAddress}`,
-            () => confirmPassword(context.db, context.operator.id, password),
-            {
-                message: 'Password tidak cocok.',
-                errors: { password: ['Password tidak cocok.'] },
-            },
-        );
+export function operatorRoutes(
+    config: Config,
+    session: ConsoleSession = consoleSession(config),
+) {
+    const box = new SecretBox(config.key, 'two-factor');
+    const {
+        issue,
+        read,
+        setCookie,
+        cookieName,
+        consoleBase,
+        operatorProcedure,
+        confirmed,
+    } = session;
 
     const routes = {
         login: consoleBase
@@ -237,7 +117,7 @@ export function operatorRoutes(config: Config) {
                         errors: { code: ['Kode tidak cocok.'] },
                     },
                 );
-                setCookie(context, 'two-factor', '', 0);
+                setCookie(context, cookieName('two-factor'), '', 0);
                 issue(
                     context,
                     'session',
@@ -256,7 +136,7 @@ export function operatorRoutes(config: Config) {
                     Date.now(),
                 );
                 context.setCookies.length = 0;
-                setCookie(context, 'session', '', 0);
+                setCookie(context, cookieName('session'), '', 0);
             }),
         me: operatorProcedure
             .route({ method: 'GET', path: '/api/v1/me' })
@@ -329,5 +209,5 @@ export function operatorRoutes(config: Config) {
                 });
             }),
     };
-    return { consoleBase, operatorProcedure, routes };
+    return routes;
 }
