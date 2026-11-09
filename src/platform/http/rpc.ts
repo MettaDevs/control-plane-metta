@@ -6,7 +6,10 @@ import { HttpFailure } from './errors.ts';
 export type Context = {
     db: Database;
     request: Request;
+    clientAddress: string;
     errorHeaders: Record<string, string>;
+    // Cookie yang dipasang serve() pada respons, termasuk respons error.
+    setCookies: string[];
 };
 
 export const ok = (body: object) => ({ status: 200, headers: {}, body });

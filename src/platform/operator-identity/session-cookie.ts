@@ -1,0 +1,57 @@
+import { createHmac, timingSafeEqual } from 'node:crypto';
+import { z } from 'zod';
+
+// Sesi konsol tidak punya tabel. Cookie memuat id operator dan waktu login, ditandatangani HMAC-SHA256 dengan APP_KEY,
+// jadi request yang hanya membaca tidak menulis apa pun ke database. Pencabutan lewat operators.sessions_valid_after.
+const payloadSchema = z.object({
+    operatorId: z.uuid(),
+    // Milidetik, supaya login sesaat sesudah logout tidak jatuh di detik yang sama dengan pencabutannya.
+    issuedAt: z.number().int(),
+    expiresAt: z.number().int(),
+});
+
+export type SessionPayload = z.infer<typeof payloadSchema>;
+
+const purpose = 'operator-session|';
+
+function signature(key: Buffer, body: string): Buffer {
+    return createHmac('sha256', key)
+        .update(purpose + body)
+        .digest();
+}
+
+export function signSession(key: Buffer, payload: SessionPayload): string {
+    const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
+    return `${body}.${signature(key, body).toString('base64url')}`;
+}
+
+export function readSession(
+    key: Buffer,
+    value: string,
+    now: number,
+): SessionPayload | null {
+    const [body, mac, ...rest] = value.split('.');
+    if (body === undefined || mac === undefined || rest.length) return null;
+    const expected = signature(key, body);
+    const given = Buffer.from(mac, 'base64url');
+    if (given.length !== expected.length || !timingSafeEqual(given, expected))
+        return null;
+    try {
+        const parsed = payloadSchema.safeParse(
+            JSON.parse(Buffer.from(body, 'base64url').toString('utf8')),
+        );
+        if (!parsed.success || parsed.data.expiresAt <= now) return null;
+        return parsed.data;
+    } catch {
+        return null;
+    }
+}
+
+export function readCookie(request: Request, name: string): string | null {
+    for (const part of (request.headers.get('cookie') ?? '').split(';')) {
+        const position = part.indexOf('=');
+        if (position > 0 && part.slice(0, position).trim() === name)
+            return part.slice(position + 1).trim();
+    }
+    return null;
+}
