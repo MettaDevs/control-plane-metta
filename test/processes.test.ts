@@ -16,7 +16,7 @@ const config = loadConfig({
 
 describe.each([
     ['console', consoleRouter(config)],
-    ['agent', agentRouter],
+    ['agent', agentRouter(config)],
 ])('%s process', (_, router) => {
     const application = createApplication(config, router);
 

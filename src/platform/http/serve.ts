@@ -29,7 +29,7 @@ export function createApplication(
         async handle(request, clientAddress = '') {
             const db = new Database(pool);
             const copy = request.clone();
-            let body: Promise<Uint8Array> | undefined;
+            let body: Promise<Uint8Array<ArrayBuffer>> | undefined;
             const context: Context = {
                 db,
                 request,
@@ -52,7 +52,9 @@ export function createApplication(
                     response.headers.set(name, value);
                 for (const cookie of context.setCookies)
                     response.headers.append('Set-Cookie', cookie);
-                response.headers.set('Cache-Control', 'no-cache, private');
+                // Route yang menetapkan kebijakan cache sendiri, misalnya berkas rilis no-store, tidak ditimpa.
+                if (!response.headers.has('Cache-Control'))
+                    response.headers.set('Cache-Control', 'no-cache, private');
                 return response;
             } finally {
                 await db.release();

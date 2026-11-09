@@ -23,6 +23,15 @@ const environmentSchema = z.object({
     SENTRY_DSN: z.url().optional(),
     SENTRY_ENVIRONMENT: z.string().min(1).optional(),
     SENTRY_RELEASE: z.string().min(1).optional(),
+    // Pendaftaran rilis dari alur rilis: token bearer, kunci publik penanda tangan SHA256SUMS (PEM), dan project
+    // registry tempat setiap image rilis tinggal. Nama env sama dengan konsol CoreERP. Tanpa token, setiap
+    // pendaftaran ditolak.
+    CONSOLE_RELEASE_TOKEN: z.string().min(1).optional(),
+    CONSOLE_RELEASE_PUBLIC_KEY_PATH: z.string().min(1).optional(),
+    CONSOLE_REGISTRY_PROJECT: z
+        .string()
+        .regex(/^[a-z0-9][a-z0-9._-]{0,62}$/)
+        .optional(),
 });
 
 export type SsoSettings = {

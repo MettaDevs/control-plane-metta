@@ -20,7 +20,7 @@ describe.skipIf(!process.env.DB_HOST)(
             ...process.env,
             APP_KEY: 'base64:' + Buffer.alloc(32, 8).toString('base64'),
         });
-        const application = createApplication(config, agentRouter);
+        const application = createApplication(config, agentRouter(config));
         const pool = createPool(config);
         const db = new Database(pool);
         const address = `198.51.100.${Math.floor(Math.random() * 250) + 1}`;

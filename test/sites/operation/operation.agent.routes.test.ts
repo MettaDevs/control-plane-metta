@@ -15,7 +15,7 @@ describe.skipIf(!process.env.DB_HOST)('site operation queue', () => {
         ...process.env,
         APP_KEY: 'base64:' + Buffer.alloc(32, 12).toString('base64'),
     });
-    const agent = createApplication(config, agentRouter);
+    const agent = createApplication(config, agentRouter(config));
     const pool = createPool(config);
     const db = new Database(pool);
     afterAll(async () => {
