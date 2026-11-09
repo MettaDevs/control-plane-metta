@@ -45,8 +45,14 @@ Belum ada satu pun folder ini.
 
 ## Database
 
-- Skema database sama persis dengan tabel sisi pusat CoreERP. Daftar tabelnya ditulis tangan di `modelSisiPusat()` pada [`apps/core/tests/Feature/Boundary/BatasPusatTest.php`](https://github.com/MettaDevs/coreERP/blob/main/apps/core/tests/Feature/Boundary/BatasPusatTest.php).
-- Selama transisi, CoreERP pemilik skema dan migration. Repo ini tidak menulis migration. Tabel pusat baru dibuat lewat migration di CoreERP, beserta model penanda `OwnedByControlPlane` dan barisnya di `BatasPusatTest.php`.
+- Skema awalnya tabel sisi pusat CoreERP. Daftar tabelnya ditulis tangan di `modelSisiPusat()` pada [`apps/core/tests/Feature/Boundary/BatasPusatTest.php`](https://github.com/MettaDevs/coreERP/blob/main/apps/core/tests/Feature/Boundary/BatasPusatTest.php).
+- Skema CoreERP adalah titik awal, bukan batas. Keputusan pemilik produk 9 November 2026: perubahan yang membuat skema lebih baik boleh dilakukan, misalnya nama yang lebih jelas, tipe kolom yang lebih tepat, atau index yang lebih berguna. Setiap perubahan:
+  - alasannya ditulis di PR-nya;
+  - dikerjakan lewat migration, tidak pernah diubah tangan di database;
+  - ikut memperbarui harness kesetaraan, termasuk pemetaan nama lama ke nama baru;
+  - tidak mengubah bentuk respons API yang sudah dipakai. Bentuk baru dirilis sebagai versi API baru.
+- Tabel pusat yang masih dipakai CoreERP: migration-nya ditulis di CoreERP, beserta model penanda `OwnedByControlPlane` dan barisnya di `BatasPusatTest.php`. Setelah areanya selesai pindah, migration-nya pindah ke repo ini.
+- Tabel baru yang tidak ada di CoreERP, misalnya trial dan langganan dari portal, sejak awal milik repo ini beserta migration-nya.
 - Production di server kami bawaannya memakai database sendiri, sama seperti demo dan sandbox. Database bersama yang dipisah `tenant_id` tetap ada sebagai pilihan paket termurah. Tidak ada schema per tenant. Ini keputusan pemilik produk pada 24 September 2026.
 - Konfigurasi runtime dan aturan database ditetapkan skill `coreerp-bun-elysia` dan [`docs/dev/39-pindah-ke-bun-elysia.md`](https://github.com/MettaDevs/coreERP/blob/main/docs/dev/39-pindah-ke-bun-elysia.md). Berkas ini sengaja tidak menyalin angkanya. Baca dari sumbernya.
 - Tidak ada baris yang dihapus fisik. Menghapus berarti mengisi `deleted_at`. Indeks unik pada kode bisnis wajib parsial (`WHERE deleted_at IS NULL`), supaya kode yang sudah dihapus bisa dipakai lagi. Rinciannya di [Penghapusan lunak](https://github.com/MettaDevs/coreERP/blob/main/docs/dev/02-module-standard.md#penghapusan-lunak).
