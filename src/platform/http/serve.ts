@@ -24,12 +24,18 @@ export function createApplication(
     return {
         async handle(request, clientAddress = '') {
             const db = new Database(pool);
+            const copy = request.clone();
+            let body: Promise<Uint8Array> | undefined;
             const context: Context = {
                 db,
                 request,
                 clientAddress,
                 errorHeaders: {},
                 setCookies: [],
+                rawBody: () =>
+                    (body ??= copy
+                        .arrayBuffer()
+                        .then((buffer) => new Uint8Array(buffer))),
             };
             try {
                 const result = await handler.handle(request, { context });
