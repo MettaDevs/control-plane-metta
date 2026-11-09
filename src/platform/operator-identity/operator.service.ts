@@ -9,7 +9,10 @@ export const operatorSchema = z.object({
 });
 export type Operator = z.infer<typeof operatorSchema>;
 
-const credentialSchema = operatorSchema.extend({ password: z.string() });
+const credentialSchema = operatorSchema.extend({
+    password: z.string(),
+    two_factor: z.boolean(),
+});
 
 export const newOperatorSchema = z.object({
     name: z.string().trim().min(1).max(255),
@@ -45,24 +48,60 @@ export async function createOperator(
     return operator;
 }
 
-export async function authenticate(
-    db: Database,
-    email: string,
+const credentialColumns =
+    'id, name, email, password, two_factor_confirmed_at is not null as two_factor';
+
+async function checkPassword(
+    row: z.infer<typeof credentialSchema> | undefined,
     password: string,
-): Promise<Operator | null> {
-    const row = await db.one(
-        credentialSchema,
-        'select id, name, email, password from operators where lower(email) = lower($1) and deleted_at is null',
-        [email],
-    );
+): Promise<{ operator: Operator; twoFactor: boolean } | null> {
     // Bun.password.verify juga membaca hash bcrypt, bentuk password dari data CoreERP yang kelak dipindah ke sini.
     const valid = await Bun.password.verify(
         password,
         row?.password ?? absentHash,
     );
     if (!row || !valid) return null;
-    const { password: _, ...operator } = row;
-    return operator;
+    const { password: _, two_factor, ...operator } = row;
+    return { operator, twoFactor: two_factor };
+}
+
+export async function authenticate(
+    db: Database,
+    email: string,
+    password: string,
+): Promise<{ operator: Operator; twoFactor: boolean } | null> {
+    const row = await db.one(
+        credentialSchema,
+        `select ${credentialColumns} from operators where lower(email) = lower($1) and deleted_at is null`,
+        [email],
+    );
+    return checkPassword(row, password);
+}
+
+// Konfirmasi password untuk tindakan yang mengubah keamanan akun, misalnya menyalakan atau mematikan 2FA.
+export async function confirmPassword(
+    db: Database,
+    operatorId: string,
+    password: string,
+): Promise<boolean> {
+    const row = await db.one(
+        credentialSchema,
+        `select ${credentialColumns} from operators where id = $1 and deleted_at is null`,
+        [operatorId],
+    );
+    return (await checkPassword(row, password)) !== null;
+}
+
+export async function twoFactorEnabled(
+    db: Database,
+    operatorId: string,
+): Promise<boolean> {
+    const row = await db.one(
+        z.object({ enabled: z.boolean() }),
+        'select two_factor_confirmed_at is not null as enabled from operators where id = $1',
+        [operatorId],
+    );
+    return row?.enabled ?? false;
 }
 
 // Operator aktif yang sesinya dibuat sesudah pencabutan terakhir.
