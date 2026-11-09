@@ -3,6 +3,10 @@ import type { Router } from '@orpc/server';
 import { Elysia } from 'elysia';
 import type { Config } from '../config/index.ts';
 import { createPool, Database } from '../database/index.ts';
+import {
+    flushErrorReporting,
+    startErrorReporting,
+} from '../error-reporting/index.ts';
 import type { Context } from './rpc.ts';
 
 type Application = {
@@ -62,7 +66,8 @@ export function serve(
     name: string,
     config: Config,
     router: Router<any, Context>,
-): void {
+): { stop: () => Promise<void> } {
+    startErrorReporting(config, name);
     const application = createApplication(config, router);
     const app = new Elysia({ aot: true, precompile: true });
     app.all(
@@ -92,7 +97,9 @@ export function serve(
     const stop = async () => {
         await app.stop();
         await application.close();
+        await flushErrorReporting();
     };
     process.on('SIGTERM', stop);
     process.on('SIGINT', stop);
+    return { stop };
 }
