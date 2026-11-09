@@ -14,9 +14,24 @@ const environmentSchema = z.object({
     SESSION_COOKIE: z.string().default('control_plane_session'),
     SESSION_LIFETIME: z.coerce.number().int().positive().default(120),
     SESSION_SECURE_COOKIE: z.enum(['true', 'false']).default('true'),
+    // SSO operator. Keempatnya diisi bersama, atau dikosongkan bersama untuk mematikan SSO.
+    CONSOLE_SSO_ISSUER: z.url().optional(),
+    CONSOLE_SSO_CLIENT_ID: z.string().min(1).optional(),
+    CONSOLE_SSO_CLIENT_SECRET: z.string().min(1).optional(),
+    CONSOLE_SSO_REDIRECT_URI: z.url().optional(),
 });
 
-export type Config = z.output<typeof environmentSchema> & { key: Buffer };
+export type SsoSettings = {
+    issuer: string;
+    clientId: string;
+    clientSecret: string;
+    redirectUri: string;
+};
+
+export type Config = z.output<typeof environmentSchema> & {
+    key: Buffer;
+    sso: SsoSettings | null;
+};
 
 export function loadConfig(
     environment: Record<string, string | undefined> = process.env,
@@ -27,5 +42,26 @@ export function loadConfig(
         : Buffer.from(values.APP_KEY);
     if (key.length !== 32)
         throw new Error('APP_KEY must contain a 32-byte key.');
-    return { ...values, key };
+    const sso = [
+        values.CONSOLE_SSO_ISSUER,
+        values.CONSOLE_SSO_CLIENT_ID,
+        values.CONSOLE_SSO_CLIENT_SECRET,
+        values.CONSOLE_SSO_REDIRECT_URI,
+    ];
+    if (sso.some(Boolean) && !sso.every(Boolean))
+        throw new Error(
+            'Set all of CONSOLE_SSO_ISSUER, CONSOLE_SSO_CLIENT_ID, CONSOLE_SSO_CLIENT_SECRET, and CONSOLE_SSO_REDIRECT_URI, or none.',
+        );
+    return {
+        ...values,
+        key,
+        sso: values.CONSOLE_SSO_ISSUER
+            ? {
+                  issuer: values.CONSOLE_SSO_ISSUER,
+                  clientId: values.CONSOLE_SSO_CLIENT_ID!,
+                  clientSecret: values.CONSOLE_SSO_CLIENT_SECRET!,
+                  redirectUri: values.CONSOLE_SSO_REDIRECT_URI!,
+              }
+            : null,
+    };
 }

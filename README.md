@@ -15,7 +15,7 @@ bun run start:console
 bun run start:agent
 ```
 
-Database dibaca dari `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, dan `DB_PASSWORD`. Host dan port proses dari `HOST` dan `PORT`. `APP_KEY` wajib berisi kunci 32 byte, misalnya `base64:` diikuti 32 byte acak dalam base64, untuk menandatangani sesi konsol.
+Database dibaca dari `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, dan `DB_PASSWORD`. Host dan port proses dari `HOST` dan `PORT`. `APP_KEY` wajib berisi kunci 32 byte, misalnya `base64:` diikuti 32 byte acak dalam base64, untuk menandatangani sesi konsol. SSO operator menyala bila `CONSOLE_SSO_ISSUER`, `CONSOLE_SSO_CLIENT_ID`, `CONSOLE_SSO_CLIENT_SECRET`, dan `CONSOLE_SSO_REDIRECT_URI` diisi bersama.
 
 Operator pertama dibuat dari CLI, dengan password lewat stdin:
 
