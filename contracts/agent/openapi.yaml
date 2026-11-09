@@ -21,8 +21,9 @@ info:
     bawah bagian ini masih ditulis dari sisi admin.erp CoreERP; path `docs/...` dan `deploy/...` menunjuk ke
     repo CoreERP. Yang berbeda di repo ini:
 
-    - Proses agen (`src/agent.ts`) melayani semua endpoint di file ini kecuali `POST /agent/v1/registry-credential`,
-      yang belum dilayani dan menjawab `404`.
+    - Proses agen (`src/agent.ts`) melayani semua endpoint di file ini. `registry-credential` membuat robot Harbor
+      pull-only untuk satu operasi `install` atau `upgrade` yang dipegang situs itu, dan robotnya dihapus saat
+      operasinya ditutup; registry yang belum disetel atau tidak menjawab dijawab `503 registry_unavailable`.
     - `POST /releases/v1` hanya menerima manifest v2 dari `rakit.sh`; manifest v1 dari alur rilis GHCR sudah dibuang
       di CoreERP. Rilis v2 disimpan di bawah edisi bernama sama dengan project registry (`CONSOLE_REGISTRY_PROJECT`),
       dan batasnya 30 pendaftaran per menit per alamat IP.
