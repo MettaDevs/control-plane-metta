@@ -4,7 +4,7 @@ import { base, type Context, HttpFailure } from '../../http/index.ts';
 import { RateLimiter } from '../../rate-limit/index.ts';
 import { revokeSessions } from '../operator.service.ts';
 import { OidcProvider, randomUrlToken, SsoFailure } from './oidc.ts';
-import { SecretBox } from '../secret-box.ts';
+import { SecretBox } from '../../secret-box/index.ts';
 import { readCookie } from '../session-cookie.ts';
 import {
     type ConsoleSession,

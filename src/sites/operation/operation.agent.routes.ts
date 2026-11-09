@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import type { Config } from '../../platform/config/index.ts';
+import { releaseClosedRobots } from '../registry-credential/registry-credential.service.ts';
 import { fromAgentId, toAgentId } from '../agent-id.ts';
 import {
     agentError,
@@ -7,7 +9,7 @@ import {
 } from '../signature/agent-request.agent.ts';
 import { claimOperation, recordStep, stepSchema } from './operation.service.ts';
 
-export const operationAgentRoutes = () => ({
+export const operationAgentRoutes = (config: Config) => ({
     // Isi request wajib objek kosong. Tidak ada operasi yang boleh diambil dijawab 204 tanpa isi.
     claimOperation: signedProcedure
         .route({
@@ -19,6 +21,13 @@ export const operationAgentRoutes = () => ({
             if (!z.strictObject({}).safeParse(parseJson(context.body)).success)
                 throw agentError(422, 'invalid_request');
             const claimed = await claimOperation(context.db, context.site.id);
+            // Robot registry milik operasi yang baru ditutup tenggatnya dihapus di sini, tanpa penjadwal.
+            await releaseClosedRobots(
+                context.db,
+                config,
+                context.site.id,
+                context.clientAddress,
+            );
             if (!claimed) return { status: 204, headers: {}, body: undefined };
             return {
                 status: 200,
@@ -46,6 +55,13 @@ export const operationAgentRoutes = () => ({
                   )
                 : null;
             if (!recorded) throw agentError(409, 'operation_not_held');
+            if (step.data.status !== 'running')
+                await releaseClosedRobots(
+                    context.db,
+                    config,
+                    context.site.id,
+                    context.clientAddress,
+                );
             return recorded;
         }),
 });

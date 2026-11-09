@@ -13,7 +13,7 @@ export function consoleRouter(config: Config) {
     return {
         ...healthRoutes(),
         ...operatorIdentityRoutes(config, session),
-        ...siteConsoleRoutes(session),
+        ...siteConsoleRoutes(config, session),
         ...releaseConsoleRoutes(session),
     };
 }

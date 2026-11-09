@@ -32,6 +32,17 @@ const environmentSchema = z.object({
         .string()
         .regex(/^[a-z0-9][a-z0-9._-]{0,62}$/)
         .optional(),
+    // Registry Harbor tempat agen menarik image rilis: host yang diberikan ke agen, alamat API Harbor yang dipanggil
+    // control plane, dan umur robot pull-only per operasi sebagai penjaga terakhir bila penghapusannya tidak pernah
+    // berhasil. Robot sistemnya disimpan terenkripsi lewat `cli.ts set-registry-robot`, bukan di env.
+    CONSOLE_REGISTRY_HOST: z.string().min(1).optional(),
+    CONSOLE_REGISTRY_API_URL: z.url().optional(),
+    CONSOLE_REGISTRY_ROBOT_DAYS: z.coerce
+        .number()
+        .int()
+        .min(1)
+        .max(30)
+        .default(1),
 });
 
 export type SsoSettings = {

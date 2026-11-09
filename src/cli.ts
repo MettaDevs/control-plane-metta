@@ -9,11 +9,20 @@ import {
     startErrorReporting,
 } from './platform/error-reporting/index.ts';
 import { createOperator } from './platform/operator-identity/index.ts';
+import {
+    RegistryUnavailable,
+    storeSystemRobot,
+    systemRobotSchema,
+} from './releases/index.ts';
 
 const usage = `Usage:
   bun src/cli.ts create-operator --name <name> --email <email>
     The password is read from stdin, never from an argument, because arguments show up in ps and shell history.
-    Example: read -rs PASSWORD && printf '%s' "$PASSWORD" | bun src/cli.ts create-operator --name "..." --email "..."`;
+    Example: read -rs PASSWORD && printf '%s' "$PASSWORD" | bun src/cli.ts create-operator --name "..." --email "..."
+  bun src/cli.ts set-registry-robot
+    Stores the Harbor system robot, encrypted, after Harbor proves it can see the registry project. Reads
+    {"name": "...", "secret": "..."} from stdin.
+    Example: printf '{"name":"%s","secret":"%s"}' "$REGISTRY_USERNAME" "$REGISTRY_PASSWORD" | bun src/cli.ts set-registry-robot`;
 
 // Pemakaian yang salah adalah kesalahan orang yang mengetik, bukan kesalahan program, jadi tidak dikirim ke Sentry.
 class UsageError extends Error {}
@@ -44,18 +53,43 @@ async function createOperatorCommand(args: string[]): Promise<void> {
     }
 }
 
+async function setRegistryRobotCommand(): Promise<void> {
+    if (process.stdin.isTTY)
+        throw new UsageError(`Send the robot through stdin.\n${usage}`);
+    const robot = systemRobotSchema.parse(JSON.parse(await Bun.stdin.text()));
+    const config = loadConfig();
+    startErrorReporting(config, 'cli');
+    const pool = createPool(config);
+    const db = new Database(pool);
+    try {
+        await storeSystemRobot(db, config, robot);
+        console.log(`stored registry robot ${robot.name}`);
+    } finally {
+        await db.release();
+        await pool.end();
+    }
+}
+
 const [command, ...rest] = process.argv.slice(2);
 try {
     switch (command) {
         case 'create-operator':
             await createOperatorCommand(rest);
             break;
+        case 'set-registry-robot':
+            await setRegistryRobotCommand();
+            break;
         default:
             throw new UsageError(usage);
     }
 } catch (error) {
     console.error(error instanceof Error ? error.message : error);
-    if (!(error instanceof UsageError) && !(error instanceof z.ZodError))
+    // Harbor yang menolak robot atau tidak menjawab adalah keadaan server, bukan kesalahan program.
+    if (
+        !(error instanceof UsageError) &&
+        !(error instanceof z.ZodError) &&
+        !(error instanceof RegistryUnavailable)
+    )
         reportError(error);
     await flushErrorReporting();
     process.exitCode = 1;

@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { Config } from '../../config/index.ts';
 import { HttpFailure } from '../../http/index.ts';
 import { findSessionOperator } from '../operator.service.ts';
-import { SecretBox } from '../secret-box.ts';
+import { SecretBox } from '../../secret-box/index.ts';
 import { type ConsoleSession, guardAttempts } from '../session.console.ts';
 import { otpauthUri } from './totp.ts';
 import {
