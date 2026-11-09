@@ -16,9 +16,10 @@ Repo ini tumbuh dengan menambah folder dan berkas di tempat yang sudah ditetapka
 | Yang bertambah | Tempatnya | Contoh |
 | --- | --- | --- |
 | Proses yang di-deploy | Satu berkas di akar `src/` | `src/console.ts` untuk operator, `src/agent.ts` untuk agen server dan pipeline rilis. Nanti `src/portal.ts` untuk customer dan `src/worker.ts` |
-| Kemampuan bersama | `src/platform/<kemampuan>/` dengan `index.ts` | `src/platform/database/`, nanti `src/platform/operator-identity/` |
+| Kemampuan bersama | `src/platform/<kemampuan>/` dengan `index.ts`. Kemampuan yang memuat lebih dari satu fitur memecahnya ke subfolder fitur | `src/platform/database/`, `src/platform/operator-identity/sso/` |
 | Area bisnis, lalu fitur | `src/<area>/<fitur>/` | `src/environments/provision/`, `src/sites/enrollment/` |
-| Peran berkas | Akhiran `.schema.ts`, `.service.ts`, `.routes.ts`, `.test.ts`, dan nanti `.page.tsx` | `environment.service.ts` |
+| Peran berkas | Akhiran `.schema.ts`, `.service.ts`, `.routes.ts`, dan nanti `.page.tsx` | `environment.service.ts` |
+| Test | `test/` di akar repo, dengan susunan folder yang sama dengan `src/` (atau `scripts/` untuk test skrip). Bantuan test di `test/support/` | `test/platform/operator-identity/sso/oidc.test.ts` untuk `src/platform/operator-identity/sso/oidc.ts` |
 | Pemanggil route atau layar | `.console.routes.ts`, `.agent.routes.ts`, `.portal.routes.ts`, dan `.console.page.tsx` | `site.agent.routes.ts` |
 | Pintu area per pemanggil | `index.ts` untuk layanan bersama, `index.<pemanggil>.ts` untuk route satu pemanggil | `src/sites/index.agent.ts` |
 | Migration | `database/migrations/` | `0001_baseline.sql` |
@@ -29,9 +30,12 @@ Repo ini tumbuh dengan menambah folder dan berkas di tempat yang sudah ditetapka
 - Setiap proses memuat router untuk pemanggilnya sendiri lewat `serve()` di `src/platform/http/`. Route yang tidak ada di router itu tidak bisa dijangkau dari prosesnya, jadi rute operator tidak pernah ada di proses yang terbuka untuk customer atau agen.
 - `index.ts` adalah satu-satunya pintu publik sebuah kemampuan atau area untuk layanan bersama. Route satu pemanggil keluar lewat `index.<pemanggil>.ts`, supaya proses lain bisa memakai layanan area itu tanpa ikut memuat route-nya. Berkas di dalam satu folder boleh saling meng-import langsung.
 - Aturan bisnis yang dipakai beberapa pemanggil ada di `.service.ts`, yang namanya tidak membawa pemanggil.
-- Test diletakkan di samping berkas yang diujinya. Tidak ada folder `test/` terpisah.
+- Test ada di `test/`, tidak di `src/`, mengikuti contoh di dokumentasi Elysia ([Unit Test](https://elysiajs.com/patterns/unit-test.html)) dan contoh project references TypeScript. `src/` hanya berisi kode yang di-deploy, dan folder fitur tidak tercampur test. Keputusan pemilik produk, 9 November 2026, menggantikan aturan lama yang menaruh test di samping berkasnya.
+- Folder test mengikuti folder kode yang diujinya, jadi test sebuah berkas dicari di path yang sama di bawah `test/`. Test yang menguji beberapa bagian sekaligus, misalnya kedua proses, ada di folder bagian yang paling atas, misalnya `test/processes.test.ts`. Penyedia tiruan dan pembuat aplikasi test ada di `test/support/`.
+- Test memanggil kode lewat pintunya (`index.ts`, `index.<pemanggil>.ts`) bila yang diuji perilaku yang dilihat pemanggil, dan langsung ke berkasnya bila yang diuji bagian dalam, misalnya TOTP atau tanda tangan cookie.
+- Route ditulis sebagai procedure oRPC, bukan controller Elysia. Elysia hanya server HTTP: satu route `app.all('*')` yang meneruskan request ke handler OpenAPI oRPC, karena hanya bentuk itu yang diukur di [`docs/dev/39-pindah-ke-bun-elysia.md`](https://github.com/MettaDevs/coreERP/blob/main/docs/dev/39-pindah-ke-bun-elysia.md). Ini sengaja menyimpang dari [best practice Elysia](https://elysiajs.com/essential/best-practice.html) yang menjadikan satu instance Elysia sebagai satu controller. Yang tetap diikuti dari halaman itu: satu folder per fitur, schema sebagai satu-satunya sumber tipe dan validasi (`z.infer`, tanpa `interface` kembaran), dan service yang menerima nilai yang ia butuhkan (misalnya `db`), bukan seluruh context request.
 - Framework UI boleh dipilih belakangan. Tempat layar tidak berubah karena pilihan itu.
-- `bun run check:boundaries` menolak impor yang melewati pintu sebuah kemampuan atau area, berkas satu pemanggil yang meng-import berkas pemanggil lain, proses yang memuat berkas pemanggil lain di mana pun di rantai impornya, proses tanpa pemanggil (misalnya `worker.ts`) yang memuat route, dan kode selain test yang meng-import berkas proses.
+- `bun run check:boundaries` menolak impor yang melewati pintu sebuah kemampuan atau area, berkas satu pemanggil yang meng-import berkas pemanggil lain, proses yang memuat berkas pemanggil lain di mana pun di rantai impornya, proses tanpa pemanggil (misalnya `worker.ts`) yang memuat route, kode selain test yang meng-import berkas proses, test di luar `test/`, folder test yang tidak punya pasangan di `src/` atau `scripts/`, dan kode di `src/` atau `scripts/` yang meng-import `test/`.
 
 ## Konsol dan portal
 
@@ -114,7 +118,7 @@ Siapa pun bisa membaca isi repo ini, termasuk berkas yang sudah dihapus, karena 
 ## Skill
 
 - Setiap skill ada di `.agents/skills/` dan `.claude/skills/` dengan isi yang sama persis, karena kedua folder dibaca alat yang berbeda. Ubah keduanya dalam commit yang sama.
-- `coreerp-bun-elysia` disalin apa adanya dari CoreERP. Path `docs/...` di dalamnya menunjuk ke repo CoreERP. Bila skill itu berubah di CoreERP, salin ulang ke kedua folder di sini.
+- `coreerp-bun-elysia` yang berlaku ada di operations-metta, karena repo CoreERP tidak disentuh lagi sejak 9 November 2026. Salinan di sini disamakan dengan versi itu; bila skill di operations-metta berubah, salin ulang ke kedua folder di sini dalam PR tersendiri. Path `docs/...` di dalamnya menunjuk ke repo CoreERP sebagai bacaan.
 
 ## Alur kerja
 
