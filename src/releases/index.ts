@@ -4,3 +4,10 @@ export {
     releaseFile,
     type StoredRelease,
 } from './registry/release.query.ts';
+export { RegistryUnavailable } from './harbor/harbor.ts';
+export {
+    registry,
+    storeSystemRobot,
+    systemRobotSchema,
+    type Registry,
+} from './harbor/registry.service.ts';
