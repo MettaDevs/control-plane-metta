@@ -1,7 +1,7 @@
 # control-plane-metta
 
 - Repo ini adalah control plane kami untuk onboarding, trial gratis 30 hari Praktik Dokter, tenant, lingkungan, rilis, dan agen server. Di dalamnya akan ada konsol operator internal dan, menyusul kemudian, portal customer. Keduanya di-deploy terpisah.
-- Yang sudah ada baru fondasinya: proses konsol dan agen yang menjawab `/up`, skema awal tabel pusat, dan pemeriksaan batas. Belum ada alur bisnis yang pindah.
+- Yang sudah ada baru fondasinya: proses konsol dengan login operator, proses agen yang baru menjawab `/up`, skema awal tabel pusat, dan pemeriksaan batas. Belum ada alur bisnis yang pindah.
 - Runtime yang dijalankan untuk klinik, yaitu ERP dan Praktik Dokter, milik repo [operations-metta](https://github.com/MettaDevs/operations-metta).
 - Untuk alur yang sudah ada di konsol operator CoreERP (`apps/control-plane`, alamatnya admin.erp), CoreERP tetap acuan perilaku sampai alur itu selesai dipindah. Aturan konsol itu ada di skill [`coreerp-konsol`](https://github.com/MettaDevs/coreERP/blob/main/.agents/skills/coreerp-konsol/SKILL.md), [`docs/dev/31-admin-erp-control-plane.md`](https://github.com/MettaDevs/coreERP/blob/main/docs/dev/31-admin-erp-control-plane.md), dan [`docs/dev/32-sso.md`](https://github.com/MettaDevs/coreERP/blob/main/docs/dev/32-sso.md).
 - Jaga perubahan dan dependency tetap minimal. Jangan membuat abstraksi atau compatibility layer spekulatif. Kalau ada yang membingungkan, tanyakan langsung ke pemilik produk dan berhenti dulu sampai konteksnya jelas.
@@ -40,6 +40,11 @@ Repo ini tumbuh dengan menambah folder dan berkas di tempat yang sudah ditetapka
 - Konsol dan portal memanggil layanan onboarding yang sama. Dari portal, customer tidak bisa memilih apa yang hanya boleh dipilih operator, misalnya owner, database, rilis, akun dukungan, dan tenggat.
 - Pengelolaan pengguna dan role di dalam tenant milik operations-metta, bukan konsol atau portal.
 - SSO operator menautkan identitas lewat `iss` dan `sub`, tidak pernah lewat email. Login SSO tidak pernah membuat akun operator.
+- Operator punya tabel `operators` sendiri, terpisah dari `users` milik customer (keputusan pemilik produk, 9 November 2026). Karena tidak ada akun customer yang bisa login di konsol, request tanpa sesi operator yang sah mendapat 401. Aturan 404 di atas berlaku bila kelak ada akun selain operator yang bisa memegang sesi konsol.
+- Operator baru dibuat dengan `bun src/cli.ts create-operator --name <nama> --email <email>` (di container: `bun dist/cli.js ...`). Password dikirim lewat stdin. Perintah ini menulis `operator.created` ke jejak audit.
+- Sesi konsol adalah cookie `HttpOnly`, `SameSite=Strict`, yang ditandatangani HMAC-SHA256 dengan `APP_KEY`; tidak ada tabel sesi. Logout mengisi `operators.sessions_valid_after`, sehingga semua sesi operator itu berakhir, termasuk di perangkat lain. Request yang mengubah sesuatu wajib `Content-Type: application/json`, supaya form dari situs lain tidak bisa mengirimnya.
+- Login yang gagal dibatasi lima kali per menit untuk setiap pasangan email dan alamat IP. Hitungannya ada di tabel `rate_limits`, jadi berlaku sama di semua proses.
+- Jejak audit ditulis dengan `recordAudit()` dari `src/platform/audit/`. Fungsi itu menolak berjalan di luar transaksi, supaya baris audit selalu ikut transaksi perubahannya.
 
 ## Aturan konsol, agen, dan rilis
 
@@ -135,5 +140,7 @@ bun test
 bun run format:check
 bun run check:boundaries
 ```
+
+Test yang membutuhkan database dilewati bila `DB_HOST` kosong. CI selalu menjalankannya terhadap database yang sudah dimigrasi. Sebelum menyatakan perubahan yang menyentuh SQL hijau, jalankan juga test itu terhadap database kosong yang sudah dimigrasi, dengan `DB_*` mengarah ke sana.
 
 `bun run build` hanya perlu dijalankan bila perubahan menyentuh hasil build: `package.json`, `bun.lock`, `tsconfig.json`, `Dockerfile`, atau berkas proses di akar `src/`. CI tetap menjalankannya di setiap PR, bersama `bun run migrate` atas database kosong dua kali: sekali untuk menerapkan, sekali untuk memastikan tidak ada yang tersisa.

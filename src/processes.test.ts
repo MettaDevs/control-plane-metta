@@ -11,10 +11,11 @@ const config = loadConfig({
     DB_DATABASE: 'unused',
     DB_USERNAME: 'unused',
     DB_PASSWORD: 'unused',
+    APP_KEY: 'base64:' + Buffer.alloc(32, 7).toString('base64'),
 });
 
 describe.each([
-    ['console', consoleRouter],
+    ['console', consoleRouter(config)],
     ['agent', agentRouter],
 ])('%s process', (_, router) => {
     const application = createApplication(config, router);

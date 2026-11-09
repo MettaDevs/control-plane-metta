@@ -5,13 +5,14 @@
     "scripts": {
         "typecheck": "tsc --noEmit",
         "test": "bun test",
-        "build": "bun build src/console.ts src/agent.ts --target=bun --outdir dist --minify",
+        "build": "bun build src/console.ts src/agent.ts src/cli.ts --target=bun --outdir dist --minify",
         "start:console": "bun src/console.ts",
         "start:agent": "bun src/agent.ts",
         "format": "prettier --write src scripts .github package.json tsconfig.json",
         "format:check": "prettier --check src scripts .github package.json tsconfig.json",
         "check:boundaries": "bun scripts/check-boundaries.ts",
-        "migrate": "bun scripts/migrate.ts"
+        "migrate": "bun scripts/migrate.ts",
+        "cli": "bun src/cli.ts"
     },
     "dependencies": {
         "@orpc/openapi": "1.16.1",

@@ -6,7 +6,7 @@ import { createPool, Database } from '../database/index.ts';
 import type { Context } from './rpc.ts';
 
 type Application = {
-    handle(request: Request): Promise<Response>;
+    handle(request: Request, clientAddress?: string): Promise<Response>;
     close(): Promise<void>;
 };
 
@@ -22,9 +22,15 @@ export function createApplication(
             error.data ?? { message: error.message },
     });
     return {
-        async handle(request) {
+        async handle(request, clientAddress = '') {
             const db = new Database(pool);
-            const context: Context = { db, request, errorHeaders: {} };
+            const context: Context = {
+                db,
+                request,
+                clientAddress,
+                errorHeaders: {},
+                setCookies: [],
+            };
             try {
                 const result = await handler.handle(request, { context });
                 const response =
@@ -34,6 +40,8 @@ export function createApplication(
                     context.errorHeaders,
                 ))
                     response.headers.set(name, value);
+                for (const cookie of context.setCookies)
+                    response.headers.append('Set-Cookie', cookie);
                 response.headers.set('Cache-Control', 'no-cache, private');
                 return response;
             } finally {
@@ -51,9 +59,15 @@ export function serve(
 ): void {
     const application = createApplication(config, router);
     const app = new Elysia({ aot: true, precompile: true });
-    app.all('*', ({ request }) => application.handle(request), {
-        parse: 'none',
-    });
+    app.all(
+        '*',
+        ({ request, server }) =>
+            application.handle(
+                request,
+                server?.requestIP(request)?.address ?? '',
+            ),
+        { parse: 'none' },
+    );
     app.listen({
         hostname: config.HOST,
         port: config.PORT,
