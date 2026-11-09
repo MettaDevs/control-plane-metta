@@ -90,7 +90,7 @@ Repo ini tumbuh dengan menambah folder dan berkas di tempat yang sudah ditetapka
 - Repo CoreERP tidak disentuh lagi (keputusan pemilik produk, 9 November 2026). Perubahan tabel pusat dan tabel baru, misalnya trial dan langganan dari portal, ditulis sebagai migration di repo ini.
 - operations-metta masih membawa salinan tabel pusat di skemanya sampai datanya dipindah ke sini dan tabel itu dicabut dari sana. Salinan itu tidak ikut diubah, jadi kode operations-metta tidak boleh mulai bergantung pada tabel pusat.
 - Production di server kami bawaannya memakai database sendiri, sama seperti demo dan sandbox. Database bersama yang dipisah `tenant_id` tetap ada sebagai pilihan paket termurah. Tidak ada schema per tenant. Ini keputusan pemilik produk pada 24 September 2026.
-- Konfigurasi runtime dan aturan database ditetapkan skill `coreerp-bun-elysia` dan [`docs/dev/39-pindah-ke-bun-elysia.md`](https://github.com/MettaDevs/coreERP/blob/main/docs/dev/39-pindah-ke-bun-elysia.md). Berkas ini sengaja tidak menyalin angkanya. Baca dari sumbernya.
+- Konfigurasi runtime dan aturan database ditetapkan skill `control-plane-metta-bun-elysia` dan [`docs/dev/39-pindah-ke-bun-elysia.md`](https://github.com/MettaDevs/coreERP/blob/main/docs/dev/39-pindah-ke-bun-elysia.md). Berkas ini sengaja tidak menyalin angkanya. Baca dari sumbernya.
 - Tidak ada baris yang dihapus fisik. Menghapus berarti mengisi `deleted_at`. Indeks unik pada kode bisnis wajib parsial (`WHERE deleted_at IS NULL`), supaya kode yang sudah dihapus bisa dipakai lagi. Rinciannya di [Penghapusan lunak](https://github.com/MettaDevs/coreERP/blob/main/docs/dev/02-module-standard.md#penghapusan-lunak).
 
 ## Bahasa
@@ -98,7 +98,7 @@ Repo ini tumbuh dengan menambah folder dan berkas di tempat yang sudah ditetapka
 - **Nama di dalam kode ditulis bahasa Inggris, tanpa kecuali.** Ini berlaku untuk berkas, folder, fungsi, class, type, variabel, properti, nama route, kunci config, variabel env, nama perintah CLI, dan komponen UI. Contohnya, `siapkanLingkungan` menjadi `provisionEnvironment`.
 - Yang tetap bahasa Indonesia, dan ini disengaja: nama tabel, kolom, index, dan constraint database, teks yang dibaca pengguna di layar, alamat URL layar yang diketik operator, komentar, docs, dan pesan commit.
 - Kalau sebuah istilah tidak punya padanan Inggris yang jelas, pakai istilah Dynamics 365 untuk hal yang sama. Jangan mengarang terjemahan harfiah.
-- Istilah teknis yang sudah baku ditulis apa adanya, misalnya push, pull, scope, token, signing secret, webhook, endpoint, GET, POST, dan PUT. Ini berlaku di layar, pesan, kontrak, dan docs. Tulis "scope `vendors.read`", bukan "cakupan `vendors.read`". Batasnya ada di skill `coreerp-docs` CoreERP, bagian [Where the loanword boundary sits](https://github.com/MettaDevs/coreERP/blob/main/.agents/skills/coreerp-docs/SKILL.md#where-the-loanword-boundary-sits).
+- Istilah teknis yang sudah baku ditulis apa adanya, misalnya push, pull, scope, token, signing secret, webhook, endpoint, GET, POST, dan PUT. Ini berlaku di layar, pesan, kontrak, dan docs. Tulis "scope `vendors.read`", bukan "cakupan `vendors.read`". Batasnya ada di skill `operations-metta-docs` operations-metta, bagian [Where the loanword boundary sits](https://github.com/MettaDevs/operations-metta/blob/main/.agents/skills/operations-metta-docs/SKILL.md#where-the-loanword-boundary-sits).
 - Teks layar untuk pengguna bisnis memakai bahasa sehari-hari yang menjelaskan tindakan atau dampaknya. Istilah internal seperti `tenant_id`, entitlement, atau nama class tidak tampil di layar itu. Pengecualiannya hanya layar yang memang untuk developer atau operator teknis.
 
 ## Nama datang dari database
@@ -119,7 +119,7 @@ Siapa pun bisa membaca isi repo ini, termasuk berkas yang sudah dihapus, karena 
 
 - Skill hanya ada di `.agents/skills/` (keputusan pemilik produk, 9 November 2026). Folder `.claude/skills/` sudah dihapus. Akibatnya: menurut dokumentasi Claude Code saat ini, skill proyek dibaca dari `.claude/skills/`, jadi sesi Claude Code tidak memuat skill repo ini sampai Claude Code membaca `.agents/skills/`. Sampai saat itu, buka `SKILL.md`-nya langsung bila tugas menyentuh bidang sebuah skill.
 - Skill `control-plane-metta-console` dan `control-plane-metta-release` dipindah dari CoreERP pada 9 November 2026, dari `coreerp-konsol` dan `coreerp-harbor`, dengan nama baru tanpa "erp". Versi yang berlaku ada di sini; salinannya di CoreERP tidak diperbarui lagi.
-- `coreerp-bun-elysia` yang berlaku ada di operations-metta, karena repo CoreERP tidak disentuh lagi sejak 9 November 2026. Salinan di sini disamakan dengan versi itu; bila skill di operations-metta berubah, salin ulang ke kedua folder di sini dalam PR tersendiri. Path `docs/...` di dalamnya menunjuk ke repo CoreERP sebagai bacaan.
+- `control-plane-metta-bun-elysia` adalah salinan skill `operations-metta-bun-elysia` milik operations-metta. Isinya sama kecuali `name`, jadi "this repository" di dalamnya berarti operations-metta, dan path `src/...` menunjuk ke susunan repo itu. Bila skill di operations-metta berubah, salin ulang ke sini dalam PR tersendiri. Path `docs/...` di dalamnya menunjuk ke repo CoreERP sebagai bacaan.
 
 ## Alur kerja
 
