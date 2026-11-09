@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { recordAudit } from '../../platform/audit/index.ts';
 import { type Database, sqlErrorCode } from '../../platform/database/index.ts';
 import { HttpFailure } from '../../platform/http/index.ts';
+import { compareReleases, findRelease } from '../../releases/index.ts';
 
 // Antrean operasi situs, sama dengan konsol CoreERP: operator meminta, agen mengambil (claim) satu per satu dengan
 // tenggat, melaporkan langkahnya, lalu menutupnya. Tidak ada penjadwal; tenggat yang lewat dan permintaan yang basi
@@ -14,6 +15,8 @@ export const manualOperations = [
     'send_diagnostics',
 ] as const;
 export type ManualOperation = (typeof manualOperations)[number];
+export type OperationRequest =
+    { operation: ManualOperation } | { operation: 'upgrade'; release: string };
 
 const now = "now() at time zone 'utc'";
 const iso = (column: string) =>
@@ -144,12 +147,14 @@ type Actor = { operatorId: string; ipAddress: string };
 const siteStateSchema = z.object({
     enrolled: z.boolean(),
     revoked: z.boolean(),
+    edition: z.string(),
+    reported_release: z.string().nullable(),
 });
 
 async function lockSite(db: Database, siteId: string) {
     const site = await db.one(
         siteStateSchema,
-        `select public_key is not null as enrolled, revoked_at is not null as revoked
+        `select public_key is not null as enrolled, revoked_at is not null as revoked, edition, reported_release
          from sites where id = $1 for update`,
         [siteId],
     );
@@ -161,13 +166,37 @@ async function lockSite(db: Database, siteId: string) {
     return site;
 }
 
+// Pembaruan hanya ke rilis yang terdaftar untuk edisi situs dan lebih baru dari rilis terpasang. Mundur hanya terjadi
+// di dalam update.sh ketika pembaruan gagal.
+async function upgradeParameters(
+    db: Database,
+    site: z.infer<typeof siteStateSchema>,
+    release: string,
+): Promise<{ edition: string; release: string }> {
+    if (!(await findRelease(db, site.edition, release)))
+        throw new HttpFailure(422, {
+            error: 'release_unknown',
+            message: 'Rilis itu tidak terdaftar untuk edisi situs ini.',
+        });
+    if (
+        site.reported_release !== null &&
+        compareReleases(release, site.reported_release) <= 0
+    )
+        throw new HttpFailure(422, {
+            error: 'release_not_newer',
+            message: `Rilis ${release} tidak lebih baru dari rilis terpasang ${site.reported_release}. Mundur hanya terjadi di dalam update.sh ketika pembaruan gagal.`,
+        });
+    return { edition: site.edition, release };
+}
+
 export async function requestOperation(
     db: Database,
     actor: Actor,
     siteId: string,
-    operation: ManualOperation,
+    request: OperationRequest,
 ): Promise<{ id: string }> {
     const id = Bun.randomUUIDv7();
+    const { operation } = request;
     return db.transaction(async () => {
         const site = await lockSite(db, siteId);
         if (site.revoked)
@@ -181,12 +210,16 @@ export async function requestOperation(
                 message:
                     'Situs ini belum terdaftar; agen belum pernah tersambung.',
             });
+        const parameters =
+            request.operation === 'upgrade'
+                ? await upgradeParameters(db, site, request.release)
+                : {};
         try {
             await db.transaction(() =>
                 db.execute(
                     `insert into site_operations (id, site_id, operation, parameters, status, requested_by, requested_at,
                                                   expires_at, created_at, updated_at)
-                     values ($1, $2, $3, '{}'::jsonb, 'requested', $4, ${now},
+                     values ($1, $2, $3, $6::text::jsonb, 'requested', $4, ${now},
                              ${now} + make_interval(days => $5), ${now}, ${now})`,
                     [
                         id,
@@ -194,6 +227,7 @@ export async function requestOperation(
                         operation,
                         actor.operatorId,
                         requestExpiryDays,
+                        JSON.stringify(parameters),
                     ],
                 ),
             );
@@ -211,7 +245,12 @@ export async function requestOperation(
             action: 'site.operation.requested',
             subjectType: 'site',
             subjectId: siteId,
-            detail: { operation_id: id, operation, release: null },
+            detail: {
+                operation_id: id,
+                operation,
+                release:
+                    request.operation === 'upgrade' ? request.release : null,
+            },
         });
         return { id };
     });

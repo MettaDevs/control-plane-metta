@@ -12,7 +12,7 @@ export type Context = {
     // Cookie yang dipasang serve() pada respons, termasuk respons error.
     setCookies: string[];
     // Byte isi request persis seperti diterima, untuk digest dan tanda tangan; oRPC membaca salinan lain.
-    rawBody: () => Promise<Uint8Array>;
+    rawBody: () => Promise<Uint8Array<ArrayBuffer>>;
 };
 
 export const ok = (body: object) => ({ status: 200, headers: {}, body });

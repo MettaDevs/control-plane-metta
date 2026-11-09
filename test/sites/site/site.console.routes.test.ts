@@ -4,15 +4,17 @@ import { agentRouter } from '../../../src/agent.ts';
 import { Database } from '../../../src/platform/database/index.ts';
 import { createApplication } from '../../../src/platform/http/index.ts';
 import { createOperator } from '../../../src/platform/operator-identity/index.ts';
+import { registerRelease } from '../../../src/releases/registry/release.service.ts';
 import { signedRequest } from '../../support/agent-client.ts';
 import { consoleTestApp } from '../../support/console-app.ts';
+import { releaseKeys, signedRelease } from '../../support/release.ts';
 import { createEnrolledSite, createSite } from '../../support/sites.ts';
 
 // Butuh PostgreSQL yang sudah dimigrasi. CI selalu menyediakannya; di laptop test ini dilewati bila DB_HOST kosong.
 describe.skipIf(!process.env.DB_HOST)('site console', () => {
     if (!process.env.DB_HOST) return;
     const { config, pool, call, sessionOf, close } = consoleTestApp(13);
-    const agent = createApplication(config, agentRouter);
+    const agent = createApplication(config, agentRouter(config));
     const db = new Database(pool);
     const email = `sites-${crypto.randomUUID()}@example.com`;
     const password = 'correct horse battery staple';
@@ -22,15 +24,18 @@ describe.skipIf(!process.env.DB_HOST)('site console', () => {
         await close();
     });
 
+    let signedIn: string | undefined;
     async function signIn() {
+        if (signedIn) return signedIn;
         await createOperator(
             db,
             { name: 'Operator Situs', email, password },
             { operatorId: null, ipAddress: null },
         );
-        return sessionOf(
+        signedIn = sessionOf(
             await call('/login', { method: 'POST', body: { email, password } }),
         );
+        return signedIn;
     }
 
     test('lists sites, issues a token, requests and cancels operations, and revokes', async () => {
@@ -183,5 +188,58 @@ describe.skipIf(!process.env.DB_HOST)('site console', () => {
         ]);
         expect(JSON.stringify(audit)).not.toContain(token);
         expect(audit.at(-1)?.detail).toEqual({ cancelled_operations: 1 });
+    });
+
+    test('requests an upgrade only to a registered release newer than the installed one', async () => {
+        const cookie = await signIn();
+        const site = await createEnrolledSite(db, agent);
+        const keys = releaseKeys();
+        const minor = Math.floor(Math.random() * 1000);
+        for (const release of [`7.${minor}.1`, `7.${minor}.10`]) {
+            const built = signedRelease(keys.privateKey, { release });
+            await registerRelease(
+                db,
+                {
+                    manifest: built.files.manifest,
+                    compose: built.files.compose,
+                    update_script: built.files.update,
+                    checksums: built.files.checksums,
+                    signature: new Uint8Array(built.files.signature),
+                },
+                { publicKeyPem: keys.publicKey, project: 'coreerp' },
+            );
+        }
+        await db.execute(
+            'update sites set reported_release = $2 where id = $1',
+            [site.siteId, `7.${minor}.2`],
+        );
+        const upgrade = (release: string) =>
+            call(`/api/v1/sites/${site.siteId}/operations`, {
+                method: 'POST',
+                body: { operation: 'upgrade', release },
+                cookie,
+            });
+        expect(await (await upgrade(`7.${minor}.99`)).json()).toMatchObject({
+            error: 'release_unknown',
+        });
+        expect(await (await upgrade(`7.${minor}.1`)).json()).toMatchObject({
+            error: 'release_not_newer',
+        });
+        // 7.x.10 lebih baru dari 7.x.2: angka, bukan teks.
+        const requested = await upgrade(`7.${minor}.10`);
+        expect(requested.status).toBe(201);
+        const claimed = await agent.handle(
+            signedRequest({
+                method: 'POST',
+                path: '/api/agent/v1/operations/claim',
+                keyId: site.agentId,
+                privateKey: site.keys.privateKey,
+                body: {},
+            }),
+        );
+        expect(await claimed.json()).toMatchObject({
+            operation: 'upgrade',
+            parameters: { edition: 'coreerp', release: `7.${minor}.10` },
+        });
     });
 });

@@ -5,6 +5,7 @@ import {
     consoleSession,
     operatorIdentityRoutes,
 } from './platform/operator-identity/index.console.ts';
+import { releaseConsoleRoutes } from './releases/index.console.ts';
 import { siteConsoleRoutes } from './sites/index.console.ts';
 
 export function consoleRouter(config: Config) {
@@ -13,6 +14,7 @@ export function consoleRouter(config: Config) {
         ...healthRoutes(),
         ...operatorIdentityRoutes(config, session),
         ...siteConsoleRoutes(session),
+        ...releaseConsoleRoutes(session),
     };
 }
 
