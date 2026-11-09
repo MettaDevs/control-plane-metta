@@ -85,6 +85,10 @@ export class Database {
         }
     }
 
+    get inTransaction(): boolean {
+        return this.depth > 0;
+    }
+
     async release(): Promise<void> {
         const connection = this.connection;
         this.connection = undefined;
