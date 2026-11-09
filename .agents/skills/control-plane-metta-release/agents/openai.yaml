@@ -1,0 +1,4 @@
+interface:
+  display_name: "Control plane releases"
+  short_description: "Guardrails for releases, Harbor, and image delivery"
+  default_prompt: "Use $control-plane-metta-release before changing release registration, Harbor, registry credentials, the release workflow, or image pulls on client servers."
