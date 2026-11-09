@@ -1,9 +1,9 @@
 import { loadConfig } from '../../src/platform/config/index.ts';
 import { createPool } from '../../src/platform/database/index.ts';
 import { createApplication } from '../../src/platform/http/index.ts';
-import { operatorIdentityRoutes } from '../../src/platform/operator-identity/index.console.ts';
+import { consoleRouter } from '../../src/console.ts';
 
-// Route identitas operator di atas database test, dipanggil seperti browser memanggil konsol: lewat Request sungguhan,
+// Router proses konsol di atas database test, dipanggil seperti browser memanggil konsol: lewat Request sungguhan,
 // dengan cookie dan alamat IP. Setiap pemanggilan memakai alamat IP sendiri, supaya pembatas percobaan tidak
 // terbawa antar-berkas test.
 export function consoleTestApp(key: number) {
@@ -12,10 +12,7 @@ export function consoleTestApp(key: number) {
         APP_KEY: 'base64:' + Buffer.alloc(32, key).toString('base64'),
         SESSION_SECURE_COOKIE: 'false',
     });
-    const application = createApplication(
-        config,
-        operatorIdentityRoutes(config),
-    );
+    const application = createApplication(config, consoleRouter(config));
     const pool = createPool(config);
     const address = `203.0.113.${Math.floor(Math.random() * 250) + 1}`;
 

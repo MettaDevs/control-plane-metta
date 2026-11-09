@@ -21,11 +21,13 @@ info:
     bawah bagian ini masih ditulis dari sisi admin.erp CoreERP; path `docs/...` dan `deploy/...` menunjuk ke
     repo CoreERP. Yang berbeda di repo ini:
 
-    - Proses agen (`src/agent.ts`) baru melayani `POST /agent/v1/enroll`, `POST /agent/v1/report`, dan
-      `POST /agent/v1/key`. `operations/claim`, `operations/{operation}/steps`, berkas rilis,
-      `registry-credential`, dan `POST /releases/v1` belum dilayani dan menjawab `404`.
-    - Id di API ini tetap berbentuk ULID: `site_id`, `tenant_id`, dan `keyid`. Database menyimpan uuid dengan
-      nilai 128 bit yang sama, dan `keyid` juga diterima dalam bentuk uuid.
+    - Proses agen (`src/agent.ts`) melayani `POST /agent/v1/enroll`, `POST /agent/v1/report`,
+      `POST /agent/v1/key`, `POST /agent/v1/operations/claim`, dan `POST /agent/v1/operations/{operation}/steps`.
+      Berkas rilis, `registry-credential`, dan `POST /releases/v1` belum dilayani dan menjawab `404`.
+    - Operasi yang dapat diminta operator baru `backup`, `rotate_key`, dan `send_diagnostics`. `upgrade`,
+      `install`, dan `install_license` menunggu rilis, lingkungan, dan lisensi dipindah ke repo ini.
+    - Id di API ini tetap berbentuk ULID: `site_id`, `tenant_id`, `keyid`, dan id operasi. Database menyimpan
+      uuid dengan nilai 128 bit yang sama, dan `keyid` serta id operasi juga diterima dalam bentuk uuid.
     - `license_public_key` di jawaban pendaftaran selalu `null`, dan jawaban laporan tidak pernah membawa
       `license`, sampai penerbitan lisensi dipindah ke repo ini.
     - Batas permintaan: pendaftaran 10 per menit per alamat IP, endpoint bertanda tangan 120 per menit per
