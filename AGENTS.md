@@ -3,7 +3,7 @@
 - Repo ini adalah control plane kami untuk onboarding, trial gratis 30 hari Praktik Dokter, tenant, lingkungan, rilis, dan agen server. Di dalamnya akan ada konsol operator internal dan, menyusul kemudian, portal customer. Keduanya di-deploy terpisah.
 - Yang sudah ada baru fondasinya: proses konsol dengan login operator, proses agen yang baru menjawab `/up`, skema awal tabel pusat, dan pemeriksaan batas. Belum ada alur bisnis yang pindah.
 - Runtime yang dijalankan untuk klinik, yaitu ERP dan Praktik Dokter, milik repo [operations-metta](https://github.com/MettaDevs/operations-metta).
-- Untuk alur yang sudah ada di konsol operator CoreERP (`apps/control-plane`, alamatnya admin.erp), CoreERP tetap acuan perilaku sampai alur itu selesai dipindah. Aturan konsol itu ada di skill [`coreerp-konsol`](https://github.com/MettaDevs/coreERP/blob/main/.agents/skills/coreerp-konsol/SKILL.md), [`docs/dev/31-admin-erp-control-plane.md`](https://github.com/MettaDevs/coreERP/blob/main/docs/dev/31-admin-erp-control-plane.md), dan [`docs/dev/32-sso.md`](https://github.com/MettaDevs/coreERP/blob/main/docs/dev/32-sso.md).
+- Untuk alur yang sudah ada di konsol operator CoreERP (`apps/control-plane`, alamatnya admin.erp), CoreERP tetap acuan perilaku sampai alur itu selesai dipindah. Aturan konsol itu ada di skill [`control-plane-metta-console`](.agents/skills/control-plane-metta-console/SKILL.md), [`docs/dev/31-admin-erp-control-plane.md`](https://github.com/MettaDevs/coreERP/blob/main/docs/dev/31-admin-erp-control-plane.md), dan [`docs/dev/32-sso.md`](https://github.com/MettaDevs/coreERP/blob/main/docs/dev/32-sso.md).
 - Jaga perubahan dan dependency tetap minimal. Jangan membuat abstraksi atau compatibility layer spekulatif. Kalau ada yang membingungkan, tanyakan langsung ke pemilik produk dan berhenti dulu sampai konteksnya jelas.
 - SaaS dikelola lewat control plane. On-prem perpetual berdiri sendiri, memakai update bertanda tangan, dan tidak mewajibkan telemetry.
 
@@ -117,7 +117,8 @@ Siapa pun bisa membaca isi repo ini, termasuk berkas yang sudah dihapus, karena 
 
 ## Skill
 
-- Setiap skill ada di `.agents/skills/` dan `.claude/skills/` dengan isi yang sama persis, karena kedua folder dibaca alat yang berbeda. Ubah keduanya dalam commit yang sama.
+- Skill hanya ada di `.agents/skills/` (keputusan pemilik produk, 9 November 2026). Folder `.claude/skills/` sudah dihapus. Akibatnya: menurut dokumentasi Claude Code saat ini, skill proyek dibaca dari `.claude/skills/`, jadi sesi Claude Code tidak memuat skill repo ini sampai Claude Code membaca `.agents/skills/`. Sampai saat itu, buka `SKILL.md`-nya langsung bila tugas menyentuh bidang sebuah skill.
+- Skill `control-plane-metta-console` dan `control-plane-metta-release` dipindah dari CoreERP pada 9 November 2026, dari `coreerp-konsol` dan `coreerp-harbor`, dengan nama baru tanpa "erp". Versi yang berlaku ada di sini; salinannya di CoreERP tidak diperbarui lagi.
 - `coreerp-bun-elysia` yang berlaku ada di operations-metta, karena repo CoreERP tidak disentuh lagi sejak 9 November 2026. Salinan di sini disamakan dengan versi itu; bila skill di operations-metta berubah, salin ulang ke kedua folder di sini dalam PR tersendiri. Path `docs/...` di dalamnya menunjuk ke repo CoreERP sebagai bacaan.
 
 ## Alur kerja

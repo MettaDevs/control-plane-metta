@@ -1,0 +1,4 @@
+interface:
+  display_name: "Control plane console"
+  short_description: "Guardrails for the operator console, its login, and the agent API"
+  default_prompt: "Use $control-plane-metta-console before changing the console or agent process, operator login, 2FA, SSO, the operator audit trail, central tables, or the agent API contract."
