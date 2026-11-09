@@ -17,10 +17,16 @@ skill only lists what an agent gets wrong without it.
 ## CoreERP stays the reference
 
 The new code is a port, not a redesign. Screen, request, and data flows are described without any framework in
-`docs/design-system/`, including the fidelity checklist in `04-pemeriksaan-kesetiaan.md`. Table and column names stay
-1:1 with CoreERP. A ported flow is finished only
-when its HTTP responses, SQL writes, and SQL oracle results match CoreERP for the same input, including revocation,
-rollback, and throttle cases. Differences found in CoreERP are reported to the owner to decide whether to copy or fix
+`docs/design-system/`, including the fidelity checklist in `04-pemeriksaan-kesetiaan.md`.
+
+CoreERP's schema is the starting point, not a limit (owner decision, 9 November 2026). A change that makes it better,
+such as a clearer name, a better column type, or a more useful index, is allowed when its reason is written in the PR,
+it ships as a migration, the parity harness gets the old-to-new name mapping, and an API response shape already in use
+changes only through a new API version. Tables that do not exist in CoreERP, such as Healthcare tables, belong to the
+new repository and its migrations from the start.
+
+A ported flow is finished only when its HTTP responses, SQL writes (after that mapping), and SQL oracle results match
+CoreERP for the same input, including revocation, rollback, and throttle cases. Differences found in CoreERP are reported to the owner to decide whether to copy or fix
 them; never fix them silently.
 
 ## Runtime setup that was measured
