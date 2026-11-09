@@ -1,0 +1,798 @@
+openapi: 3.1.0
+info:
+  title: CoreERP admin.erp — API agen situs dan pendaftaran rilis
+  version: 1.0.0
+  description: |
+    Dua permukaan yang dipanggil dari luar admin.erp, bukan dari peramban operator:
+
+    - `/api/agent/v1/*` — dipanggil **agen** di server klien on-prem yang dikelola vendor.
+    - `/api/releases/v1` — dipanggil **alur rilis** untuk mendaftarkan berkas rilis bertanda tangan.
+
+    File ini **ditulis tangan dan merupakan sumber kebenaran**. Agen di `deploy/agent/` dibangun
+    dari file ini, bukan dari kode PHP. Menambah route tanpa menambahkannya di sini adalah perubahan
+    yang belum selesai; `contracts/check-contract-coverage.py` menolaknya di CI.
+
+    Rancangannya di `docs/todo/on-prem-dikelola/README.md`.
+
+    ## Keadaan di control-plane-metta
+
+    File ini disalin apa adanya dari CoreERP (`apps/control-plane/contracts/openapi-agent.yaml`, commit
+    `47033dce`), karena agen yang sudah terpasang di server klien dibangun darinya. Bagian di atas dan di
+    bawah bagian ini masih ditulis dari sisi admin.erp CoreERP; path `docs/...` dan `deploy/...` menunjuk ke
+    repo CoreERP. Yang berbeda di repo ini:
+
+    - Proses agen (`src/agent.ts`) baru melayani `POST /agent/v1/enroll`, `POST /agent/v1/report`, dan
+      `POST /agent/v1/key`. `operations/claim`, `operations/{operation}/steps`, berkas rilis,
+      `registry-credential`, dan `POST /releases/v1` belum dilayani dan menjawab `404`.
+    - Id di API ini tetap berbentuk ULID: `site_id`, `tenant_id`, dan `keyid`. Database menyimpan uuid dengan
+      nilai 128 bit yang sama, dan `keyid` juga diterima dalam bentuk uuid.
+    - `license_public_key` di jawaban pendaftaran selalu `null`, dan jawaban laporan tidak pernah membawa
+      `license`, sampai penerbitan lisensi dipindah ke repo ini.
+    - Batas permintaan: pendaftaran 10 per menit per alamat IP, endpoint bertanda tangan 120 per menit per
+      path dan alamat IP. Kelebihannya dijawab `429 {"error": "too_many_requests"}` dengan `Retry-After`.
+
+    ## Tanda tangan permintaan agen
+
+    Setiap endpoint agen **kecuali** `POST /enroll` wajib bertanda tangan. Bentuknya bagian kecil
+    dari HTTP Message Signatures (RFC 9421), dan bagian yang tidak disebut di sini **tidak** didukung:
+
+    | | |
+    | --- | --- |
+    | Algoritma | `rsa-v1_5-sha256` (RFC 9421 §3.3.2), kunci RSA milik situs |
+    | Label | `sig1` — satu-satunya yang dibaca |
+    | Komponen, urutan tetap | `"@method" "@path" "content-digest"` |
+    | Parameter wajib | `created` (detik Unix), `keyid` (id situs), `alg` |
+    | Batas selisih `created` | 300 detik terhadap jam admin.erp |
+
+    Header yang dikirim:
+
+    ```
+    Content-Digest: sha-256=:<base64 SHA-256 isi permintaan>:
+    Signature-Input: sig1=("@method" "@path" "content-digest");created=1726300000;keyid="01J...";alg="rsa-v1_5-sha256"
+    Signature: sig1=:<base64 tanda tangan>:
+    ```
+
+    `Content-Digest` wajib ada juga untuk permintaan tanpa isi; nilainya SHA-256 dari string kosong.
+
+    Signature base — baris dipisah `\n`, tanpa `\n` di akhir:
+
+    ```
+    "@method": POST
+    "@path": /api/agent/v1/report
+    "content-digest": sha-256=:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=:
+    "@signature-params": ("@method" "@path" "content-digest");created=1726300000;keyid="01J...";alg="rsa-v1_5-sha256"
+    ```
+
+    `@method` ditulis huruf besar. `@path` adalah path permintaan tanpa query. Nilai
+    `@signature-params` sama persis dengan nilai anggota `sig1` di header `Signature-Input`.
+
+    `@path` dipakai alih-alih `@target-uri` karena admin.erp berada di belakang proxy: alamat lengkap
+    yang dilihat aplikasi bergantung pada setelan proxy yang dipercaya, sementara path tidak.
+
+    Penolakan tanda tangan selalu `401` dengan `error` bernilai `signature_invalid`, tanpa menyebut
+    bagian mana yang salah. Situs yang dicabut juga `401`.
+
+servers:
+  - url: /api
+    description: Relatif terhadap host admin.erp.
+
+tags:
+  - name: agent
+    description: Dipanggil agen di server klien.
+  - name: releases
+    description: Dipanggil alur rilis.
+
+paths:
+  /agent/v1/enroll:
+    post:
+      tags: [agent]
+      operationId: enrollSite
+      summary: Mendaftarkan agen dengan token pendaftaran
+      description: |
+        Satu-satunya endpoint agen tanpa tanda tangan: kunci situs baru lahir di sini. Token hanya
+        berlaku sekali. Token yang sudah dipakai, kedaluwarsa, atau milik situs yang dicabut ditolak
+        dengan jawaban yang sama.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [token, public_key, agent_version]
+              properties:
+                token:
+                  type: string
+                  minLength: 32
+                public_key:
+                  type: string
+                  description: Kunci publik RSA situs dalam PEM (`-----BEGIN PUBLIC KEY-----`), minimal 2048 bit.
+                agent_version:
+                  type: string
+                  maxLength: 40
+      responses:
+        '201':
+          description: Terdaftar.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Enrolled'
+        '401':
+          $ref: '#/components/responses/EnrollmentRejected'
+        '422':
+          $ref: '#/components/responses/Invalid'
+
+  /agent/v1/report:
+    post:
+      tags: [agent]
+      operationId: reportSiteState
+      summary: Melaporkan keadaan situs
+      description: |
+        Isinya daftar tertutup. Kunci di luar skema ditolak `422` — itu yang menegakkan "data yang boleh
+        keluar dari server klien", bukan kebiasaan agen.
+      security:
+        - siteSignature: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Report'
+      responses:
+        '200':
+          description: Diterima.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [interval_seconds]
+                properties:
+                  interval_seconds:
+                    type: integer
+                  license:
+                    $ref: '#/components/schemas/SignedLicense'
+                    description: |
+                      Lisensi baru, disertakan **hanya saat perpanjangan jatuh tempo**: situs tidak dicabut,
+                      perpanjangannya tidak dihentikan, `license_expires_at` di laporan ini kosong atau ≤ hari
+                      ini + `license_renew_before_days`, dan lisensi terakhir diterbitkan lebih lama dari
+                      `license_renew_cooldown_minutes` yang lalu. Di luar itu kuncinya tidak ada.
+
+                      Agen memasangnya lewat pemeriksaan yang sama dengan operasi `install_license`. Lisensi
+                      yang ditolak agen tidak menggantikan yang terpasang dan tidak menggagalkan putaran; ia
+                      terlihat di admin.erp sebagai `license_expires_at` yang tidak bergerak.
+        '401':
+          $ref: '#/components/responses/SignatureInvalid'
+        '422':
+          $ref: '#/components/responses/Invalid'
+
+  /agent/v1/operations/claim:
+    post:
+      tags: [agent]
+      operationId: claimOperation
+      summary: Mengambil operasi berikutnya
+      description: |
+        Operasi `running` yang lease-nya habis ditandai `failed` lebih dulu, lalu yang `requested`
+        diambil paling tua lebih dulu. `upgrade` hanya diberikan di dalam jendela pembaruan situs;
+        `install` kapan saja tetapi hanya bila rilisnya sudah ditentukan; operasi lain kapan saja. Satu
+        situs hanya punya satu operasi `running`.
+      security:
+        - siteSignature: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+      responses:
+        '200':
+          description: Satu operasi diserahkan dan lease-nya dipegang agen ini.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClaimedOperation'
+        '204':
+          description: Tidak ada operasi yang boleh diambil sekarang.
+        '401':
+          $ref: '#/components/responses/SignatureInvalid'
+
+  /agent/v1/operations/{operation}/steps:
+    post:
+      tags: [agent]
+      operationId: reportOperationStep
+      summary: Melaporkan langkah, atau hasil akhir, sebuah operasi
+      description: |
+        `status: running` mencatat langkah dan memperpanjang lease. `succeeded` dan `failed` menutup
+        operasi; `failed` wajib membawa `failure_message`. Operasi milik situs lain, yang sudah
+        ditutup, atau yang lease-nya habis dijawab `409` — agen harus berhenti mengerjakannya.
+      security:
+        - siteSignature: []
+      parameters:
+        - name: operation
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [status, step]
+              properties:
+                status:
+                  type: string
+                  enum: [running, succeeded, failed]
+                step:
+                  type: string
+                  maxLength: 120
+                failure_message:
+                  type: string
+                  maxLength: 4000
+      responses:
+        '200':
+          description: Dicatat.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [lease_until]
+                properties:
+                  lease_until:
+                    type: [string, 'null']
+                    format: date-time
+        '401':
+          $ref: '#/components/responses/SignatureInvalid'
+        '409':
+          description: Operasi ini tidak lagi dipegang agen ini.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          $ref: '#/components/responses/Invalid'
+
+  /agent/v1/releases/{edition}/{release}/files/{file}:
+    get:
+      tags: [agent]
+      operationId: downloadReleaseFile
+      summary: Mengambil satu berkas rilis
+      description: |
+        Isi berkas persis seperti yang didaftarkan alur rilis. Agen memverifikasi tanda tangannya
+        sendiri dengan kunci publik rilis yang dipaku `pasang.sh` saat pemasangan pertama — **bukan**
+        dengan kunci yang datang bersama rilis atau lewat API ini. Hanya rilis dari edisi situs ini yang
+        dapat diambil.
+      security:
+        - siteSignature: []
+      parameters:
+        - name: edition
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: release
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: file
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [manifest.json, compose.yaml, update.sh, SHA256SUMS, SHA256SUMS.sig]
+      responses:
+        '200':
+          description: Isi berkas.
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/SignatureInvalid'
+        '404':
+          description: Rilis atau berkas tidak ada untuk edisi situs ini.
+
+  /agent/v1/registry-credential:
+    post:
+      tags: [agent]
+      operationId: issueRegistryCredential
+      summary: Meminta kredensial registry untuk operasi yang sedang dipegang
+      description: |
+        Kredensial pull-only ke project `coreerp` di registry image, untuk menarik image rilis dan image
+        pendamping lewat digest yang disebut manifest v2. Hanya dijawab bila situs ini memegang operasi
+        `install` atau `upgrade` yang disebut `operation_id` — `running` dan lease-nya belum habis.
+
+        Satu robot per operasi, bukan per situs. Memanggil ulang selama operasi yang sama memutar rahasia
+        robot yang sama, tidak membuat robot kedua; agen memanggil ulang ketika pull dijawab `401` di tengah
+        jalan. Robot berumur paling lama satu hari dan dihapus admin.erp begitu operasinya ditutup, apa pun
+        cara penutupannya. Token yang sudah diterbitkan registry untuk robot itu tetap berlaku sampai umur
+        tokennya habis.
+
+        `registry` adalah host, bukan URL. Agen tidak pernah menyimpan kredensial ini di luar
+        `DOCKER_CONFIG` sementara milik operasinya.
+      security:
+        - siteSignature: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [operation_id]
+              properties:
+                operation_id:
+                  type: string
+                  maxLength: 26
+      responses:
+        '200':
+          description: Kredensial untuk operasi itu.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegistryCredential'
+        '401':
+          $ref: '#/components/responses/SignatureInvalid'
+        '409':
+          description: Situs ini tidak memegang operasi `install` atau `upgrade` dengan id itu.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          $ref: '#/components/responses/Invalid'
+        '503':
+          description: Registry belum disetel di admin.erp atau tidak menjawab. Operasi tetap dipegang agen.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /agent/v1/key:
+    post:
+      tags: [agent]
+      operationId: rotateSiteKey
+      summary: Mengganti kunci situs
+      description: Ditandatangani kunci **lama**. Sesudah jawaban `200`, hanya kunci baru yang diterima.
+      security:
+        - siteSignature: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [public_key]
+              properties:
+                public_key:
+                  type: string
+      responses:
+        '200':
+          description: Kunci diganti.
+        '401':
+          $ref: '#/components/responses/SignatureInvalid'
+        '422':
+          $ref: '#/components/responses/Invalid'
+
+  /releases/v1:
+    post:
+      tags: [releases]
+      operationId: registerRelease
+      summary: Mendaftarkan berkas rilis bertanda tangan
+      description: |
+        Dipanggil alur rilis. admin.erp memeriksa `SHA256SUMS.sig` dengan kunci publik rilis, lalu
+        checksum setiap berkas, sebelum menyimpan apa pun. admin.erp **tidak** memegang kunci privat
+        rilis. Pasangan edisi dan rilis unik: berkas identik dijawab `200`, berkas berbeda untuk
+        pasangan yang sama `409`.
+      security:
+        - releaseToken: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [manifest, compose, update_script, checksums, signature]
+              properties:
+                manifest:
+                  type: string
+                  format: binary
+                compose:
+                  type: string
+                  format: binary
+                update_script:
+                  type: string
+                  format: binary
+                checksums:
+                  type: string
+                  format: binary
+                signature:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: Terdaftar.
+        '200':
+          description: Sudah terdaftar dengan isi yang sama.
+        '401':
+          description: Token rilis salah atau tidak disetel.
+        '409':
+          description: Edisi dan rilis yang sama sudah terdaftar dengan isi berbeda.
+        '422':
+          $ref: '#/components/responses/Invalid'
+
+components:
+  securitySchemes:
+    siteSignature:
+      type: apiKey
+      in: header
+      name: Signature
+      description: RFC 9421, bentuk yang dijelaskan di `info.description`.
+    releaseToken:
+      type: http
+      scheme: bearer
+
+  responses:
+    SignatureInvalid:
+      description: Tanda tangan tidak sah, `created` di luar batas, digest tidak cocok, atau situs dicabut.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    EnrollmentRejected:
+      description: Token pendaftaran tidak dapat dipakai.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Invalid:
+      description: Isi permintaan tidak sesuai skema.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  schemas:
+    RegistryCredential:
+      type: object
+      additionalProperties: false
+      required: [registry, username, password, expires_at]
+      properties:
+        registry:
+          type: string
+          description: Host registry, misalnya `registry.erp.grenery.xyz`.
+        username:
+          type: string
+        password:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+    Error:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+
+    Enrolled:
+      type: object
+      additionalProperties: false
+      required: [site_id, tenant_id, tenant_name, interval_seconds, update_window, license_public_key]
+      properties:
+        site_id:
+          type: string
+        tenant_id:
+          type: string
+          description: |
+            ULID tenant di admin.erp. Core di server klien melahirkan tenant-nya dengan id yang sama
+            lewat `tenant:bootstrap-site`, supaya kedua sisi menyebut tenant yang sama tanpa tabel
+            penerjemah.
+        tenant_name:
+          type: string
+        interval_seconds:
+          type: integer
+        update_window:
+          $ref: '#/components/schemas/UpdateWindow'
+        license_public_key:
+          type: [string, 'null']
+          description: |
+            Kunci publik lisensi dalam PEM, pemeriksa `SignedLicense` di agen dan di Core. Pasangan
+            privatnya dipegang admin.erp, yang memang sumber kebenaran app yang dibeli: lisensi
+            menentukan app mana yang boleh dibuka, tetapi tidak dapat mengganti kode yang berjalan.
+            Kunci publik **rilis** tidak pernah datang dari sini.
+
+    UpdateWindow:
+      type: [object, 'null']
+      additionalProperties: false
+      required: [start, end, timezone]
+      properties:
+        start:
+          type: string
+          pattern: '^[0-2][0-9]:[0-5][0-9]$'
+        end:
+          type: string
+          pattern: '^[0-2][0-9]:[0-5][0-9]$'
+        timezone:
+          type: string
+
+    ClaimedOperation:
+      type: object
+      additionalProperties: false
+      required: [id, operation, parameters, lease_until]
+      properties:
+        id:
+          type: string
+        operation:
+          type: string
+          enum: [upgrade, install, backup, install_license, rotate_key, send_diagnostics]
+        parameters:
+          description: |
+            `upgrade`: `{edition, release}`. `install_license`: `{license, signature}` berbentuk
+            `SignedLicense` — lisensi format versi 2, diperiksa agen persis seperti lisensi di jawaban
+            laporan. Operasi lain: objek kosong.
+
+            `install`: `{edition, release, tenant_id, tenant_name, app_ids, admin_name, admin_email,
+            admin_password_hash, app_url}` — rilis pertama lewat jalur yang sama dengan `upgrade`, lalu
+            `tenant:bootstrap-site` di Core. Agen menolak seluruh operasi, sebelum mengunduh apa pun,
+            bila satu bidang tidak memenuhi aturannya:
+
+            ```json
+            {"edition":"coreerp","release":"1.0.0","tenant_id":"01J...","tenant_name":"...",
+             "app_ids":["human-resources","management-aset"],"admin_name":"...","admin_email":"...",
+             "admin_password_hash":"$2y$12$<53 karakter>","app_url":"https://klinik-sehat.erp.grenery.xyz"}
+            ```
+
+            | Bidang | Aturan |
+            | --- | --- |
+            | `edition` | aturan yang sama dengan `upgrade`, dipakai bersama `release` untuk mengambil berkas rilis; admin.erp mengirim konstanta image tunggal `coreerp` |
+            | `release` | aturan yang sama dengan `upgrade`; `null` atau kosong ditolak, walaupun admin.erp hanya memberikan `install` bila rilisnya sudah ditentukan |
+            | `tenant_id` | ULID tenant di admin.erp: 26 huruf Crockford base32, huruf pertama `0`–`7`, huruf besar atau kecil |
+            | `tenant_name`, `admin_name` | teks tidak kosong, paling panjang 255, tanpa huruf kendali |
+            | `admin_email` | `lokal@domain` tanpa spasi dan huruf kendali, paling panjang 255 |
+            | `app_ids` | larik id app `^[a-z0-9][a-z0-9-]*$`, unik, terurut, boleh kosong; satu `--app` per id. Agen menolak id ganda; urutannya tidak diperiksa |
+            | `admin_password_hash` | hash bcrypt `$2y$`, biaya `04`–`31` (admin.erp memakai `BCRYPT_ROUNDS`-nya), 53 karakter `[./A-Za-z0-9]` |
+            | `app_url` | `https://<host>` tanpa port, jalur, atau garis miring di ujung; host huruf kecil `[a-z0-9.-]`, paling sedikit dua label. Agen menulisnya ke `APP_URL` dan nama host proxy HTTPS di `.env` sebelum stack dinyalakan, tanpa menyentuh baris lain. admin.erp lama tidak mengirimnya; tanpa bidang ini `.env` tidak diubah |
+
+            Hash hanya sampai ke Core lewat stdin; agen tidak pernah menaruhnya di argumen proses, log, atau
+            `failure_message`. Rilis yang sama yang sudah terpasang tidak dipasang ulang, dan Core menjawab
+            tenant dengan owner yang sama "sudah ada", jadi operasi ini aman diulang.
+          type: object
+        lease_until:
+          type: string
+          format: date-time
+
+    Report:
+      type: object
+      additionalProperties: false
+      required: [site_id, agent_version, created_at, server_time]
+      properties:
+        site_id:
+          type: string
+        agent_version:
+          type: string
+          maxLength: 40
+        created_at:
+          type: string
+          format: date-time
+        server_time:
+          type: string
+          format: date-time
+        edition:
+          type: [string, 'null']
+          maxLength: 80
+        release:
+          type: [string, 'null']
+          maxLength: 40
+        image:
+          type: [string, 'null']
+          maxLength: 255
+        digest:
+          type: [string, 'null']
+          maxLength: 100
+        containers:
+          type: array
+          maxItems: 20
+          items:
+            type: object
+            additionalProperties: false
+            required: [service, state]
+            properties:
+              service:
+                type: string
+                maxLength: 60
+              state:
+                type: string
+                maxLength: 30
+              health:
+                type: [string, 'null']
+                maxLength: 30
+        disk:
+          type: [object, 'null']
+          additionalProperties: false
+          properties:
+            data_free_bytes:
+              type: [integer, 'null']
+            backup_free_bytes:
+              type: [integer, 'null']
+        last_backup:
+          type: [object, 'null']
+          additionalProperties: false
+          required: [at, result]
+          properties:
+            at:
+              type: string
+              format: date-time
+            size_bytes:
+              type: [integer, 'null']
+            result:
+              type: string
+              enum: [succeeded, failed]
+        last_operation:
+          type: [object, 'null']
+          additionalProperties: false
+          required: [id, result]
+          properties:
+            id:
+              type: string
+            result:
+              type: string
+              enum: [succeeded, failed]
+            step:
+              type: [string, 'null']
+              maxLength: 120
+        certificate_expires_at:
+          type: [string, 'null']
+          format: date-time
+        license_expires_at:
+          type: [string, 'null']
+          format: date
+        license_perpetual:
+          type: [boolean, 'null']
+          description: |
+            Apakah lisensi yang terpasang di server klien tidak punya tanggal berakhir (`valid_until`
+            bernilai null). Lisensi permanen membuat `license_expires_at` kosong, sama seperti lisensi
+            yang hilang; penanda ini yang membedakan keduanya, dan admin.erp memakainya untuk berhenti
+            memperpanjang. `null` berarti agen lama yang belum mengenal bidang ini.
+        license_required:
+          type: [boolean, 'null']
+          description: |
+            Apakah `.env` pemasangan mewajibkan lisensi: `true` hanya bila baris terakhir untuk
+            `COREERP_LICENSE_REQUIRED` tertulis persis `COREERP_LICENSE_REQUIRED=true`, `false` untuk
+            bentuk lain atau bila kuncinya tidak ada, `null` bila `.env` tidak dapat dibaca. Nilainya
+            dapat diubah root di server klien; situs on-prem dikelola yang melaporkan `false` berarti
+            kunci lisensinya mati, dan admin.erp menampilkan peringatan.
+        finance_feed:
+          $ref: '#/components/schemas/FinanceFeed'
+
+    FinanceFeed:
+      type: [object, 'null']
+      additionalProperties: false
+      required: [counts, oldest_pending_at, last_pulled_at]
+      description: |
+        Ringkasan feed posting finance dari Core di server klien, untuk ditampilkan di halaman server klien.
+        **Hanya jumlah dan waktu**: tidak ada nomor posting, dokumen sumber, akun, dimensi, vendor, maupun
+        nilai uang. Dijumlahkan untuk seluruh tenant di server itu.
+
+        Agen membacanya dengan `php artisan finance-postings:summary` di container `core-app`, memakai compose
+        dan image yang dicatat `update.sh` sesudah terbukti sehat — jalan yang sama dengan
+        `tenant:bootstrap-site` — dengan batas waktu, lalu menyusun ulang objek ini kunci demi kunci dari
+        keluarannya. Kunci lain di keluaran Core tidak ikut terkirim. Keluaran perintah itu berbentuk skema ini
+        juga, dan `FinanceFeedSummaryTest` di Core mencocokkannya dengan skema ini.
+
+        `null` berarti agen mengenal bidang ini tetapi tidak mendapat ringkasan: belum ada rilis yang terbukti
+        sehat, `.env` tidak ada, Core tidak menjawab dalam batas waktunya, rilis Core belum punya perintahnya,
+        atau keluarannya tidak berbentuk seperti ini. Kuncinya tidak ada berarti agen lama yang belum mengenal
+        bidang ini; laporan itu tetap sah.
+
+        admin.erp tidak menjadikan perubahan bidang ini riwayat laporan: angkanya bergerak bersama transaksi
+        klinik, bukan bersama keadaan server.
+      properties:
+        counts:
+          type: object
+          additionalProperties: false
+          required: [held, pending, posted, rejected, manual]
+          description: Jumlah posting per status, termasuk status yang jumlahnya nol.
+          properties:
+            held:
+              type: integer
+              minimum: 0
+              description: Ditahan di Core karena pemetaan akun atau dimensi belum lengkap.
+            pending:
+              type: integer
+              minimum: 0
+              description: Siap di-pull atau dikirim ke pembaca, dan belum di-ack.
+            posted:
+              type: integer
+              minimum: 0
+              description: Sudah dibukukan pembaca.
+            rejected:
+              type: integer
+              minimum: 0
+              description: Ditolak pembaca dengan kode alasan.
+            manual:
+              type: integer
+              minimum: 0
+              description: Tidak dikirim — sebelum cutover, feed entitas legalnya mati, atau ditandai manual.
+        oldest_pending_at:
+          type: [string, 'null']
+          format: date-time
+          pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$'
+          description: |
+            Jam terbit (UTC) posting `pending` tertua, atau `null` bila tidak ada yang `pending`. admin.erp
+            menghitung umurnya terhadap `server_time` laporan yang sama, sehingga selisih jam server klien
+            terhadap admin.erp tidak ikut, dan menandai feed bila umurnya melewati ambangnya.
+        last_pulled_at:
+          type: [string, 'null']
+          format: date-time
+          pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$'
+          description: |
+            Jam (UTC) pull terakhir oleh klien integrasi mana pun di server itu, atau `null` bila belum
+            pernah ada pull. Pengiriman mode `push` tidak dihitung sebagai pull.
+        last_pushed_at:
+          type: [string, 'null']
+          format: date-time
+          pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$'
+          description: |
+            Jam (UTC) kiriman mode `push` terakhir yang diterima pembaca (jawaban 2xx), oleh klien mana pun, atau
+            `null` bila belum pernah ada. Selalu dikirim bersama `failed_pushes`; keduanya tidak ada bila rilis
+            Core di server itu lebih lama dari agennya, dan laporan itu tetap sah.
+        failed_pushes:
+          type: integer
+          minimum: 0
+          description: |
+            Jumlah kiriman `push` yang berhenti gagal — 4xx, redirect, tujuan yang ditolak, atau percobaan ulang
+            yang habis — untuk posting yang masih `pending` dan klien yang belum dicabut. Kiriman itu tidak
+            dicoba lagi otomatis; admin.erp menandai feed yang angkanya lebih dari nol. Selalu dikirim bersama
+            `last_pushed_at`.
+
+    SignedLicense:
+      type: object
+      additionalProperties: false
+      required: [license, signature]
+      description: |
+        Lisensi situs bertanda tangan, **format versi 2**. Bentuk yang sama dipakai parameter operasi
+        `install_license` dan jawaban laporan.
+
+        `license` adalah byte persis yang ditandatangani, dan agen menyalinnya apa adanya ke
+        `license.json`:
+
+        ```json
+        {"version":2,"tenant_id":"01J...","site_id":"01J...","apps":["human-resources","management-aset"],"valid_until":"2026-10-15","issued_at":"2026-09-15T08:00:00Z"}
+        ```
+
+        | Bidang | Aturan |
+        | --- | --- |
+        | `version` | tepat `2`; versi lain ditolak |
+        | `site_id` | id situs penerima |
+        | `apps` | id app `^[a-z0-9][a-z0-9-]*$`, unik, terurut; boleh kosong (hanya Core) |
+        | `valid_until` | tanggal kalender `YYYY-MM-DD`, atau `null` untuk lisensi permanen; bidangnya sendiri wajib ada |
+
+        Lisensi permanen ditulis `"valid_until":null`. Ia tidak pernah habis dan tidak pernah
+        diperpanjang; yang membatasi tetap daftar `apps`. Bidang `valid_until` yang **hilang** tetap
+        ditolak, karena berkas yang terpotong saat ditulis kehilangan bidang terakhirnya lebih dulu.
+
+        Agen menolak lisensi yang tanda tangannya tidak sah terhadap kunci publik lisensi yang
+        diterimanya saat pendaftaran, yang `site_id`-nya bukan situs itu, yang `version`-nya bukan
+        `2`, yang `apps`-nya bukan larik id app, yang tidak menyebut `valid_until`, atau yang
+        `valid_until`-nya bukan tanggal kalender maupun null.
+        Lisensi yang ditolak tidak menggantikan lisensi yang terpasang.
+      properties:
+        license:
+          type: string
+          description: JSON lisensi versi 2, byte persis yang ditandatangani.
+        signature:
+          type: string
+          description: Base64 satu baris dari tanda tangan RSA PKCS#1 v1.5 SHA-256 atas byte `license`.
