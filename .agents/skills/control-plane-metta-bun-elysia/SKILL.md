@@ -28,8 +28,10 @@ it ships as a migration, the parity harness in `parity/` gets the old-to-new nam
 already in use changes only through a new API version. Tables that do not exist in CoreERP, such as Healthcare tables,
 belong to this repository and its migrations from the start.
 
-A ported flow is finished only when its HTTP responses, SQL writes (after that mapping), and SQL oracle results match
-CoreERP for the same input, including revocation, rollback, and throttle cases (`parity/README.md`). Differences found
+A ported flow that computes or records money or numbers (finance posting, depreciation, document numbering, stored
+money amounts) is finished only when its HTTP responses, SQL writes (after that mapping), and SQL oracle results match
+CoreERP for the same input, including revocation, rollback, and throttle cases (`parity/README.md`). Other ported
+flows are finished when database-backed tests prove CoreERP's behaviour (owner decision, 9 November 2026). Differences found
 in CoreERP are reported to the owner to decide whether to copy or fix them; never fix them silently.
 
 ## Runtime setup that was measured
