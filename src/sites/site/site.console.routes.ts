@@ -68,15 +68,22 @@ export function siteConsoleRoutes(session: ConsoleSession) {
             })
             .input(
                 siteParams.extend({
-                    body: z.object({ operation: z.string() }),
+                    body: z.object({
+                        operation: z.string(),
+                        release: z.string().optional(),
+                    }),
                 }),
             )
             .handler(async ({ context, input }) => {
-                const operation = z
-                    .enum(manualOperations)
-                    .safeParse(input.body.operation);
-                // Pembaruan rilis dan lisensi belum dipindah ke konsol ini; install dibuat dari halaman lingkungan.
-                if (!operation.success)
+                const { operation, release } = input.body;
+                const manual = z.enum(manualOperations).safeParse(operation);
+                const request = manual.success
+                    ? { operation: manual.data }
+                    : operation === 'upgrade' && release
+                      ? { operation: 'upgrade' as const, release }
+                      : null;
+                // Lisensi belum dipindah ke konsol ini; install dibuat dari halaman lingkungan.
+                if (!request)
                     throw new HttpFailure(422, {
                         error: 'operation_unavailable',
                         message:
@@ -86,7 +93,7 @@ export function siteConsoleRoutes(session: ConsoleSession) {
                     context.db,
                     actor(context),
                     input.params.site,
-                    operation.data,
+                    request,
                 );
             }),
         cancelOperation: operatorProcedure
