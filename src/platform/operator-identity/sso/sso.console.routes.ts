@@ -1,15 +1,15 @@
 import { z } from 'zod';
-import type { Config } from '../config/index.ts';
-import { base, type Context, HttpFailure } from '../http/index.ts';
-import { RateLimiter } from '../rate-limit/index.ts';
-import { revokeSessions } from './operator.service.ts';
+import type { Config } from '../../config/index.ts';
+import { base, type Context, HttpFailure } from '../../http/index.ts';
+import { RateLimiter } from '../../rate-limit/index.ts';
+import { revokeSessions } from '../operator.service.ts';
 import { OidcProvider, randomUrlToken, SsoFailure } from './oidc.ts';
-import { SecretBox } from './secret-box.ts';
-import { readCookie } from './session-cookie.ts';
+import { SecretBox } from '../secret-box.ts';
+import { readCookie } from '../session-cookie.ts';
 import {
     type ConsoleSession,
     twoFactorWindowSeconds,
-} from './session.console.ts';
+} from '../session.console.ts';
 import {
     findLinkedOperator,
     linkIdentity,

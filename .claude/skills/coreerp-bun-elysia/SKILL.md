@@ -47,7 +47,7 @@ them; never fix them silently.
   Automatic numbers are for transaction documents and main masters searched by code, such as assets. Small setup
   masters get no number sequence: a short user-typed code like Business Central's `Code` field when people type or
   filter by it, otherwise only a name and an internal id. Decide per master when it is ported.
-- Never cast a parameter to a type other than its column's: `= any($1::text[])` against `char(26)` ids drops the index.
+- Never cast a parameter to a type other than its column's: in CoreERP, `= any($1::text[])` against `char(26)` ids dropped the index. Ids here are `uuid`; bind them untyped or as `uuid`/`uuid[]`.
 - Every commit costs one fsync. On a slow disk that is the ceiling, not CPU. Read requests write nothing unless they
   must; sessions live in Valkey as in `docs/dev/36-cache-and-sessions.md`. Valkey `appendfsync always` moves the fsync
   rather than removing it — the choice is open and must be measured, not assumed.

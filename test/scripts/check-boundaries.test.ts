@@ -3,7 +3,13 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
-const script = join(import.meta.dir, 'check-boundaries.ts');
+const script = join(
+    import.meta.dir,
+    '..',
+    '..',
+    'scripts',
+    'check-boundaries.ts',
+);
 const roots: string[] = [];
 
 function check(tree: Record<string, string>) {
@@ -37,7 +43,9 @@ describe('check-boundaries', () => {
             ...sites,
             'src/console.ts': `import './sites/index.console.ts'; import './sites/index.ts';`,
             'src/agent.ts': `import './sites/index.agent.ts';`,
-            'src/console.test.ts': `import './console.ts';`,
+            'test/console.test.ts': `import '../src/console.ts';`,
+            'test/sites/site/site.service.test.ts': `import '../../../src/sites/site/site.service.ts';`,
+            'test/support/provider.ts': `export const provider = 1;`,
         });
         expect(result.output).toBe('');
         expect(result.code).toBe(0);
@@ -102,6 +110,30 @@ describe('check-boundaries', () => {
         expect(result.code).toBe(1);
         expect(result.output).toContain(
             'only tests may import a process file.',
+        );
+    });
+
+    test('rejects tests outside test/, orphan test folders, and code importing test/', async () => {
+        const result = check({
+            ...sites,
+            'src/sites/site/site.service.test.ts': `import './site.service.ts';`,
+            'scripts/tool.test.ts': `export {};`,
+            'test/billing/invoice.test.ts': `export {};`,
+            'test/support/provider.ts': `export const provider = 1;`,
+            'src/sites/site/site.service.ts': `import '../../../test/support/provider.ts';`,
+        });
+        expect(result.code).toBe(1);
+        expect(result.output).toContain(
+            'src/sites/site/site.service.test.ts; tests live under test/',
+        );
+        expect(result.output).toContain(
+            'scripts/tool.test.ts; tests live under test/',
+        );
+        expect(result.output).toContain(
+            'test/billing/invoice.test.ts; test/billing mirrors no folder.',
+        );
+        expect(result.output).toContain(
+            'src/sites/site/site.service.ts imports test/support/provider.ts; code under src/ and scripts/ must not import test/.',
         );
     });
 });

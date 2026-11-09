@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { SecretBox } from './secret-box.ts';
+import { SecretBox } from '../../../src/platform/operator-identity/secret-box.ts';
 
 describe('secret box', () => {
     const box = new SecretBox(Buffer.alloc(32, 1), 'two-factor');

@@ -9,14 +9,20 @@ import ts from 'typescript';
 //   3. Proses di akar src/ hanya memuat berkas audiensnya sendiri, dihitung atas seluruh rantai impornya, supaya
 //      rute konsol tidak pernah ada di proses agen atau portal walaupun lewat perantara.
 //   4. Hanya test yang meng-import berkas proses.
+//   5. Test hanya ada di test/, di folder yang sama dengan letak kode yang diujinya di src/ atau scripts/. Bantuan test
+//      ada di test/support/. Kode di src/ dan scripts/ tidak meng-import apa pun dari test/.
 const audiences = ['console', 'agent', 'portal'] as const;
 type Audience = (typeof audiences)[number];
 
 const root = resolve(process.argv[2] ?? join(import.meta.dir, '..'));
 const src = join(root, 'src');
+const scripts = join(root, 'scripts');
+const tests = join(root, 'test');
+const support = join(tests, 'support') + sep;
 const extension = /\.(ts|tsx|js|mjs|cjs)$/;
 
 function files(directory: string): string[] {
+    if (!existsSync(directory)) return [];
     return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
         const path = join(directory, entry.name);
         if (entry.isDirectory()) return files(path);
@@ -64,6 +70,35 @@ const shown = (path: string) => relative(root, path).replaceAll(sep, '/');
 const checked = files(src);
 const imports = new Map<string, { path: string; line: number }[]>();
 const violations: string[] = [];
+
+for (const file of [...checked, ...files(scripts)]) {
+    if (isTest(file))
+        violations.push(
+            `${shown(file)}; tests live under test/, in the folder that mirrors the code they test.`,
+        );
+    const text = readFileSync(file, 'utf8');
+    for (const imported of ts.preProcessFile(text, true, true).importedFiles) {
+        const path = resolveImport(file, imported.fileName);
+        if (path?.startsWith(tests + sep))
+            violations.push(
+                `${shown(file)} imports ${shown(path)}; code under src/ and scripts/ must not import test/.`,
+            );
+    }
+}
+
+// test/scripts/x mencerminkan scripts/x, test/x mencerminkan src/x. Folder test yatim berarti kodenya sudah pindah.
+for (const file of files(tests).filter(
+    (path) => isTest(path) && !path.startsWith(support),
+)) {
+    const folder = relative(tests, dirname(file));
+    const [first, ...rest] = folder.split(sep);
+    const mirrored =
+        first === 'scripts' ? join(scripts, ...rest) : join(src, folder);
+    if (!existsSync(mirrored))
+        violations.push(
+            `${shown(file)}; test/${folder.replaceAll(sep, '/')} mirrors no folder. Move the test next to the mirror of the code it tests.`,
+        );
+}
 for (const file of checked) {
     const text = readFileSync(file, 'utf8');
     const lineOf = (position: number) =>
@@ -118,4 +153,6 @@ if (violations.length) {
     console.error(`${violations.length} boundary violation(s).`);
     process.exit(1);
 }
-console.log(`Boundaries hold across ${checked.length} files under src/.`);
+console.log(
+    `Boundaries hold across ${checked.length} files under src/ and the tests under test/.`,
+);

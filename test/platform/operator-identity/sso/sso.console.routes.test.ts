@@ -1,13 +1,14 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { z } from 'zod';
-import { loadConfig } from '../config/index.ts';
-import { createPool, Database } from '../database/index.ts';
-import { createApplication } from '../http/index.ts';
-import { OidcStub } from './oidc.stub.ts';
-import { operatorRoutes } from './operator-identity.console.routes.ts';
-import { createOperator } from './operator.service.ts';
-import { consoleSession } from './session.console.ts';
-import { ssoRoutes } from './sso.console.routes.ts';
+import { loadConfig } from '../../../../src/platform/config/index.ts';
+import {
+    createPool,
+    Database,
+} from '../../../../src/platform/database/index.ts';
+import { createApplication } from '../../../../src/platform/http/index.ts';
+import { OidcStub } from '../../../support/oidc-provider.ts';
+import { operatorIdentityRoutes } from '../../../../src/platform/operator-identity/index.console.ts';
+import { createOperator } from '../../../../src/platform/operator-identity/index.ts';
 
 // Butuh PostgreSQL yang sudah dimigrasi. CI selalu menyediakannya; di laptop test ini dilewati bila DB_HOST kosong.
 describe.skipIf(!process.env.DB_HOST)('operator SSO', () => {
@@ -36,11 +37,7 @@ describe.skipIf(!process.env.DB_HOST)('operator SSO', () => {
             CONSOLE_SSO_CLIENT_SECRET: stub.clientSecret,
             CONSOLE_SSO_REDIRECT_URI: stub.redirectUri,
         });
-        const session = consoleSession(config);
-        application = createApplication(config, {
-            ...operatorRoutes(config, session),
-            ...ssoRoutes(config, session),
-        });
+        application = createApplication(config, operatorIdentityRoutes(config));
     });
     afterAll(async () => {
         stub.stop();
@@ -257,10 +254,7 @@ describe.skipIf(!process.env.DB_HOST)('operator SSO', () => {
             ...process.env,
             APP_KEY: 'base64:' + Buffer.alloc(32, 6).toString('base64'),
         });
-        const app = createApplication(
-            plain,
-            ssoRoutes(plain, consoleSession(plain)),
-        );
+        const app = createApplication(plain, operatorIdentityRoutes(plain));
         try {
             for (const path of ['/sso/start', '/sso/callback?code=x&state=y'])
                 expect(

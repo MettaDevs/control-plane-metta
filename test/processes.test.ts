@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import { agentRouter } from './agent.ts';
-import { consoleRouter } from './console.ts';
-import { loadConfig } from './platform/config/index.ts';
-import { createApplication } from './platform/http/index.ts';
+import { agentRouter } from '../src/agent.ts';
+import { consoleRouter } from '../src/console.ts';
+import { loadConfig } from '../src/platform/config/index.ts';
+import { createApplication } from '../src/platform/http/index.ts';
 
 // /up tidak menyentuh database, jadi alamat database palsu cukup: pool baru tersambung pada query pertama.
 const config = loadConfig({

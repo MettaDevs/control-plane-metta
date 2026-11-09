@@ -1,8 +1,8 @@
 import { z } from 'zod';
-import { recordAudit } from '../audit/index.ts';
-import type { Database } from '../database/index.ts';
-import { HttpFailure } from '../http/index.ts';
-import { type Operator, operatorSchema } from './operator.service.ts';
+import { recordAudit } from '../../audit/index.ts';
+import type { Database } from '../../database/index.ts';
+import { HttpFailure } from '../../http/index.ts';
+import { type Operator, operatorSchema } from '../operator.service.ts';
 
 type Actor = { operatorId: string; ipAddress: string };
 type Identity = { issuer: string; subject: string };

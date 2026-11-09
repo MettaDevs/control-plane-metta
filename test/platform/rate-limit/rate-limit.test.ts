@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from 'bun:test';
-import { loadConfig } from '../config/index.ts';
-import { createPool, Database } from '../database/index.ts';
-import { RateLimiter } from './index.ts';
+import { loadConfig } from '../../../src/platform/config/index.ts';
+import { createPool, Database } from '../../../src/platform/database/index.ts';
+import { RateLimiter } from '../../../src/platform/rate-limit/index.ts';
 
 // Butuh PostgreSQL yang sudah dimigrasi. CI selalu menyediakannya; di laptop test ini dilewati bila DB_HOST kosong.
 describe.skipIf(!process.env.DB_HOST)('rate limiter', () => {
