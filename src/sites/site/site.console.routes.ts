@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { Config } from '../../platform/config/index.ts';
 import { HttpFailure } from '../../platform/http/index.ts';
 import type { ConsoleSession } from '../../platform/operator-identity/index.console.ts';
 import {
@@ -7,6 +8,7 @@ import {
     requestOperation,
     revokeSite,
 } from '../operation/operation.service.ts';
+import { releaseClosedRobots } from '../registry-credential/registry-credential.service.ts';
 import {
     findSite,
     issueSiteEnrollmentToken,
@@ -15,7 +17,7 @@ import {
 
 const siteParams = z.object({ params: z.object({ site: z.uuid() }) });
 
-export function siteConsoleRoutes(session: ConsoleSession) {
+export function siteConsoleRoutes(config: Config, session: ConsoleSession) {
     const { operatorProcedure } = session;
     const actor = (context: {
         operator: { id: string };
@@ -126,6 +128,13 @@ export function siteConsoleRoutes(session: ConsoleSession) {
             .input(siteParams)
             .handler(async ({ context, input }) => {
                 await revokeSite(context.db, actor(context), input.params.site);
+                await releaseClosedRobots(
+                    context.db,
+                    config,
+                    input.params.site,
+                    context.clientAddress,
+                    true,
+                );
             }),
     };
 }

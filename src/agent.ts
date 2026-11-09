@@ -7,7 +7,7 @@ import { siteAgentRoutes } from './sites/index.agent.ts';
 export function agentRouter(config: Config) {
     return {
         ...healthRoutes(),
-        ...siteAgentRoutes(),
+        ...siteAgentRoutes(config),
         ...releaseAgentRoutes(config),
     };
 }
