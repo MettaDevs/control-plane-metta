@@ -19,6 +19,10 @@ const environmentSchema = z.object({
     CONSOLE_SSO_CLIENT_ID: z.string().min(1).optional(),
     CONSOLE_SSO_CLIENT_SECRET: z.string().min(1).optional(),
     CONSOLE_SSO_REDIRECT_URI: z.url().optional(),
+    // Pelaporan kesalahan ke Sentry. Kosong berarti mati.
+    SENTRY_DSN: z.url().optional(),
+    SENTRY_ENVIRONMENT: z.string().min(1).optional(),
+    SENTRY_RELEASE: z.string().min(1).optional(),
 });
 
 export type SsoSettings = {

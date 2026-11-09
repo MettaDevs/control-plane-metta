@@ -1,6 +1,7 @@
 import { ORPCError, os } from '@orpc/server';
 import { z } from 'zod';
 import { type Database, sqlErrorCode } from '../database/index.ts';
+import { reportError } from '../error-reporting/index.ts';
 import { HttpFailure } from './errors.ts';
 
 export type Context = {
@@ -53,6 +54,10 @@ export const base = os.$context<Context>().use(async ({ context, next }) => {
                       },
             ) + '\n',
         );
+        reportError(error, {
+            method: context.request.method,
+            path: new URL(context.request.url).pathname,
+        });
         throw new ORPCError('INTERNAL_SERVER_ERROR', {
             status: 500,
             data: { message: 'Server Error' },
