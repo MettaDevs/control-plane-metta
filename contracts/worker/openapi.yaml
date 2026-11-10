@@ -28,8 +28,16 @@ info:
     - Tenggat 30 menit, diperpanjang setiap langkah `running`. Tenggat yang lewat ditutup gagal saat antrean dibaca, dan
       lingkungannya menjadi `degraded`. Langkah dan penutupan dari worker yang tidak lagi memegang operasi dijawab
       `409 operation_not_held`; worker itu harus berhenti.
-    - Penutupan `succeeded` operasi `provision` membuat lingkungan `active`; `failed` membuatnya `degraded`. Setiap
-      penutupan membuang `parameters.admin.password_hash`.
+    - Penutupan `succeeded` operasi `provision` dan `migrate` membuat lingkungan `active`; `failed` membuatnya
+      `degraded`. Setiap penutupan membuang `parameters.admin.password_hash`.
+
+    ## Operasi
+
+    - `provision`: membuat database lingkungan, menjalankan migration Core, menulis tenant dan admin pertama, lalu
+      mencatat alamatnya. Parameternya `ProvisionParameters`.
+    - `migrate`: menjalankan migration Core yang belum terpasang di database lingkungan yang sudah disiapkan, sampai
+      skemanya sama dengan kode worker. Parameternya `MigrateParameters`. Hanya diminta untuk lingkungan dengan
+      database sendiri yang penyiapannya pernah selesai.
 servers:
   - url: /api/worker/v1
 paths:
@@ -164,7 +172,7 @@ components:
           format: uuid
         operation:
           type: string
-          enum: [provision]
+          enum: [provision, migrate]
         environment_id:
           type: string
           format: uuid
@@ -172,7 +180,10 @@ components:
           type: string
           format: date-time
         parameters:
-          $ref: '#/components/schemas/ProvisionParameters'
+          description: '`ProvisionParameters` untuk `provision`, `MigrateParameters` untuk `migrate`.'
+          oneOf:
+            - $ref: '#/components/schemas/ProvisionParameters'
+            - $ref: '#/components/schemas/MigrateParameters'
     ProvisionParameters:
       description: |
         Permintaan penyiapan operations-metta (`provisionRequestSchema` di `src/platform/environment/` repo itu),
@@ -215,6 +226,14 @@ components:
             name: { type: string }
             email: { type: string, format: email }
             password_hash: { type: string }
+    MigrateParameters:
+      type: object
+      additionalProperties: false
+      required: [database]
+      properties:
+        database:
+          type: string
+          pattern: '^[a-z][a-z0-9_]{0,62}$'
     Step:
       type: object
       additionalProperties: false

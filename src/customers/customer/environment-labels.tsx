@@ -49,6 +49,8 @@ export function operationName(operation: Operation['operation']): string {
     switch (operation) {
         case 'provision':
             return 'Penyiapan';
+        case 'migrate':
+            return 'Pembaruan skema';
         default: {
             const unknown: never = operation;
             return unknown;
