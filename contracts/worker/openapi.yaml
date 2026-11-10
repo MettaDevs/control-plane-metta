@@ -32,7 +32,9 @@ info:
       `degraded`. Penutupan `convert` membiarkan lingkungan `active` apa pun hasilnya, termasuk bila tenggatnya habis,
       karena demo yang gagal dikonversi masih utuh dan sedang dipakai. Penutupan `succeeded` operasi `expire`
       menghapus lunak lingkungannya (isinya boleh dibuang setelah masa tenggang, bawaannya 30 hari); `failed` tidak
-      mengubah lingkungan. Setiap penutupan membuang `parameters.admin.password_hash`.
+      mengubah lingkungan. Penutupan `succeeded` operasi `restore` melepas hapus lunaknya dan mengembalikan status
+      sebelum dihapus; `failed` membiarkannya tetap dihapus. Setiap penutupan membuang
+      `parameters.admin.password_hash`.
     - Operasi `expire` tidak diminta operator. Demo yang tanggal berakhirnya lewat diantrekan saat host pemegangnya
       memanggil claim, kecuali masih punya operasi terbuka atau expire-nya gagal kurang dari sejam yang lalu.
 
@@ -50,6 +52,10 @@ info:
     - `expire`: menonaktifkan alamat demo `<tenant_slug>.demo.<base>` di runtime, sehingga alamat itu berhenti
       melayani. Database dan isinya tidak disentuh, karena isinya masih boleh dipulihkan sampai masa tenggangnya habis.
       Parameternya `ExpireParameters`.
+    - `restore`: menyalakan lagi alamat `<tenant_slug>.<base>` (produksi) atau `<tenant_slug>.<kind>.<base>` yang
+      dinonaktifkan `expire`, selama alamat itu masih menunjuk database yang sama. Diminta operator untuk lingkungan
+      yang dihapus lunak dan masa tenggangnya belum habis; claim membawanya walaupun lingkungannya sedang dihapus.
+      Parameternya `RestoreParameters`.
 servers:
   - url: /api/worker/v1
 paths:
@@ -184,7 +190,7 @@ components:
           format: uuid
         operation:
           type: string
-          enum: [provision, migrate, convert, expire]
+          enum: [provision, migrate, convert, expire, restore]
         environment_id:
           type: string
           format: uuid
@@ -192,12 +198,13 @@ components:
           type: string
           format: date-time
         parameters:
-          description: '`ProvisionParameters` untuk `provision`, `MigrateParameters` untuk `migrate`, `ConvertParameters` untuk `convert`, `ExpireParameters` untuk `expire`.'
+          description: '`ProvisionParameters` untuk `provision`, `MigrateParameters` untuk `migrate`, `ConvertParameters` untuk `convert`, `ExpireParameters` untuk `expire`, `RestoreParameters` untuk `restore`.'
           oneOf:
             - $ref: '#/components/schemas/ProvisionParameters'
             - $ref: '#/components/schemas/MigrateParameters'
             - $ref: '#/components/schemas/ConvertParameters'
             - $ref: '#/components/schemas/ExpireParameters'
+            - $ref: '#/components/schemas/RestoreParameters'
     ProvisionParameters:
       description: |
         Permintaan penyiapan operations-metta (`provisionRequestSchema` di `src/platform/environment/` repo itu),
@@ -273,6 +280,20 @@ components:
           type: string
         database:
           description: Database lingkungan demo; null berarti database bersama runtime.
+          type: [string, 'null']
+          pattern: '^[a-z][a-z0-9_]{0,62}$'
+    RestoreParameters:
+      type: object
+      additionalProperties: false
+      required: [tenant_slug, kind, database]
+      properties:
+        tenant_slug:
+          type: string
+        kind:
+          type: string
+          enum: [production, sandbox, demo]
+        database:
+          description: Database lingkungan; null berarti database bersama runtime.
           type: [string, 'null']
           pattern: '^[a-z][a-z0-9_]{0,62}$'
     Step:

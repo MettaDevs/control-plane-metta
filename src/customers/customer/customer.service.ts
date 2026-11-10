@@ -283,6 +283,7 @@ const operationNameSchema = z.enum([
     'migrate',
     'convert',
     'expire',
+    'restore',
 ]);
 const operationStatusSchema = z.enum([
     'requested',
