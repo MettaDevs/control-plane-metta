@@ -12,6 +12,11 @@ import {
     orpc,
     type ApiOutput,
 } from '../../platform/shell/index.ts';
+import {
+    EnvironmentName,
+    environmentStatus,
+    OperationCell,
+} from './environment-labels.tsx';
 
 type Customer = ApiOutput<'listCustomers'>['customers'][number];
 type Environment = Customer['environments'][number];
@@ -28,117 +33,6 @@ const openStatuses: ReadonlySet<Operation['status']> = new Set([
 
 // Selama ada operasi yang belum ditutup worker, daftar dibaca ulang supaya kemajuannya terlihat tanpa memuat ulang.
 const refreshMs = 3000;
-
-function kindLabel(kind: Environment['kind']): string {
-    switch (kind) {
-        case 'production':
-            return 'Produksi';
-        case 'sandbox':
-            return 'Sandbox';
-        case 'demo':
-            return 'Demo';
-        default: {
-            const unknown: never = kind;
-            return unknown;
-        }
-    }
-}
-
-function environmentStatus(status: Environment['status']): {
-    label: string;
-    variant: 'default' | 'secondary' | 'destructive' | 'outline';
-} {
-    switch (status) {
-        case 'provisioning':
-            return { label: 'Sedang disiapkan', variant: 'secondary' };
-        case 'copying':
-            return { label: 'Sedang disalin', variant: 'secondary' };
-        case 'active':
-            return { label: 'Aktif', variant: 'default' };
-        case 'maintenance':
-            return { label: 'Pemeliharaan', variant: 'outline' };
-        case 'degraded':
-            return { label: 'Bermasalah', variant: 'destructive' };
-        case 'suspended':
-            return { label: 'Dihentikan sementara', variant: 'outline' };
-        default: {
-            const unknown: never = status;
-            return { label: unknown, variant: 'outline' };
-        }
-    }
-}
-
-function operationName(operation: Operation['operation']): string {
-    switch (operation) {
-        case 'provision':
-            return 'Penyiapan';
-        default: {
-            const unknown: never = operation;
-            return unknown;
-        }
-    }
-}
-
-function operationStatus(status: Operation['status']): string {
-    switch (status) {
-        case 'requested':
-            return 'menunggu diambil worker';
-        case 'running':
-            return 'sedang berjalan';
-        case 'succeeded':
-            return 'selesai';
-        case 'failed':
-            return 'gagal';
-        default: {
-            const unknown: never = status;
-            return unknown;
-        }
-    }
-}
-
-// Nama bawaan lingkungan sama dengan jenisnya ("Demo"), jadi jenisnya hanya ditulis bila operator memberi nama lain.
-function EnvironmentName({
-    environment,
-}: {
-    environment: Environment;
-}): ReactNode {
-    const kind = kindLabel(environment.kind);
-    return environment.name === kind ? (
-        <span>{kind}</span>
-    ) : (
-        <span>
-            {environment.name}{' '}
-            <span className="text-muted-foreground">({kind})</span>
-        </span>
-    );
-}
-
-function OperationCell({
-    operation,
-}: {
-    operation: Environment['operation'];
-}): ReactNode {
-    if (!operation) return <DataTableText>-</DataTableText>;
-    return (
-        <div className="flex min-w-0 flex-col gap-0.5 py-1 text-sm">
-            <span>
-                {operationName(operation.operation)}{' '}
-                {operationStatus(operation.status)}
-            </span>
-            {operation.status === 'failed' && operation.failure_message ? (
-                <span className="text-xs break-words text-destructive">
-                    {operation.failure_message}
-                </span>
-            ) : (
-                operation.step && (
-                    <span className="text-xs text-muted-foreground">
-                        Langkah: {operation.step}
-                    </span>
-                )
-            )}
-        </div>
-    );
-}
 
 function rowsOf(customers: Customer[]): Row[] {
     return customers.flatMap((customer): Row[] =>
@@ -188,6 +82,14 @@ function CustomersPage(): ReactNode {
                 data={rowsOf(customers)}
                 getRowKey={(row) =>
                     row.environment?.id ?? row.customer.client_id
+                }
+                getRowLabel={(row) => row.customer.legal_name}
+                rowActivation="single-click"
+                onRowClick={(row) =>
+                    void navigate({
+                        to: '/customers/$client',
+                        params: { client: row.customer.client_id },
+                    })
                 }
                 emptyMessage="Belum ada customer. Pilih Baru untuk membuat customer pertama."
                 columns={[

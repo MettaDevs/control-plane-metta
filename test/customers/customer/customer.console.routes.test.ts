@@ -261,4 +261,60 @@ describe.skipIf(!process.env.DB_HOST)('customer console', () => {
             ).sort(),
         ).toEqual(['admin', 'environment', 'legal_name', 'slug']);
     });
+
+    test('detail customer memuat tenant, lingkungan, dan operasinya beserta peminta', async () => {
+        const customerSlug = slug();
+        const result = created.parse(
+            await (
+                await create(body(customerSlug, { kind: 'production' }))
+            ).json(),
+        );
+        const path = `/api/v1/customers/${result.client_id}`;
+        expect((await call(path)).status).toBe(401);
+        const response = await call(path, { cookie: await signIn() });
+        expect(response.status).toBe(200);
+        const { customer } = (await response.json()) as {
+            customer: {
+                slug: string;
+                tenants: {
+                    id: string;
+                    environments: {
+                        id: string;
+                        status: string;
+                        runtime_host: string | null;
+                        database_name: string | null;
+                        operations: Record<string, unknown>[];
+                    }[];
+                }[];
+            };
+        };
+        expect(customer.slug).toBe(customerSlug);
+        expect(customer.tenants.map((tenant) => tenant.id)).toEqual([
+            result.tenant_id,
+        ]);
+        const [environment] = customer.tenants[0]!.environments;
+        expect(environment).toMatchObject({
+            id: result.environment_id,
+            status: 'provisioning',
+            runtime_host: null,
+        });
+        expect(environment?.database_name).toStartWith('env_');
+        expect(environment?.operations).toEqual([
+            expect.objectContaining({
+                id: result.operation_id,
+                operation: 'provision',
+                status: 'requested',
+                requested_by: 'Operator Customer',
+                started_at: null,
+            }),
+        ]);
+        expect(JSON.stringify(customer)).not.toContain('password_hash');
+        expect(
+            (
+                await call(`/api/v1/customers/${crypto.randomUUID()}`, {
+                    cookie: await signIn(),
+                })
+            ).status,
+        ).toBe(404);
+    });
 });

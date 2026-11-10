@@ -1,4 +1,4 @@
-import { Building2, Package, Server } from 'lucide-react';
+import { Building2, Cpu, Package, Server } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 // Menu konsol. Setiap operator memegang akses yang sama, jadi menunya ditulis di sini dan tidak disaring server.
@@ -34,6 +34,19 @@ export const navigation: NavigationGroup[] = [
         href: '/sites',
         icon: Server,
         items: [{ id: 'sites', label: 'Daftar server klien', href: '/sites' }],
+    },
+    {
+        id: 'runtime-hosts',
+        label: 'Host runtime',
+        href: '/runtime-hosts',
+        icon: Cpu,
+        items: [
+            {
+                id: 'runtime-hosts',
+                label: 'Daftar host runtime',
+                href: '/runtime-hosts',
+            },
+        ],
     },
     {
         id: 'releases',
