@@ -3,7 +3,10 @@ import { z } from 'zod';
 import { agentRouter } from '../../../src/agent.ts';
 import { createCustomer } from '../../../src/customers/customer/customer.service.ts';
 import { addRuntimeHost } from '../../../src/environments/index.ts';
-import { requestMigration } from '../../../src/environments/operation/environment-operation.service.ts';
+import {
+    requestConversion,
+    requestMigration,
+} from '../../../src/environments/operation/environment-operation.service.ts';
 import { loadConfig } from '../../../src/platform/config/index.ts';
 import { createPool, Database } from '../../../src/platform/database/index.ts';
 import { createApplication } from '../../../src/platform/http/index.ts';
@@ -343,5 +346,193 @@ describe.skipIf(!process.env.DB_HOST)('worker environment queue', () => {
             operation_id: second.id,
             operation: 'migrate',
         });
+    });
+
+    test('convert hanya untuk demo aktif tanpa produksi, mengubah jenisnya saat sukses, dan gagal tetap active', async () => {
+        const worker = await host();
+        const actor = { operatorId: await operator(), ipAddress: null };
+        const refused = (promise: Promise<unknown>) =>
+            promise.then(
+                () => null,
+                (error: unknown) =>
+                    z
+                        .object({ body: z.object({ error: z.string() }) })
+                        .parse(error).body.error,
+            );
+        const demo = async () => {
+            const created = await createCustomer(
+                db,
+                actor,
+                crypto.randomUUID(),
+                {
+                    legal_name: 'PT Klinik Demo',
+                    slug: `demo-${crypto.randomUUID().slice(-12)}`,
+                    admin: { name: 'Admin', email: 'admin@demo.test' },
+                    environment: {
+                        kind: 'demo',
+                        name: 'Demo',
+                        expires_at: '2099-01-31',
+                    },
+                },
+            );
+            await db.execute(
+                'update environments set runtime_host_id = $2 where id = $1',
+                [created.environment_id, worker.id],
+            );
+            return created;
+        };
+        const close = (id: string, status: 'succeeded' | 'failed') =>
+            worker.call(`/api/worker/v1/operations/${id}/steps`, {
+                status,
+                step: status === 'succeeded' ? 'done' : 'failed',
+                ...(status === 'failed'
+                    ? { failure_message: 'alamat produksi sudah dipakai' }
+                    : {}),
+            });
+        const convertSchema = z.object({
+            operation: z.object({
+                id: z.string(),
+                operation: z.literal('convert'),
+                parameters: z.strictObject({
+                    tenant_slug: z.string(),
+                    database: z.string().nullable(),
+                    name: z.string(),
+                }),
+            }),
+        });
+
+        const created = await demo();
+        expect(
+            await refused(requestConversion(db, actor, created.environment_id)),
+        ).toBe('environment_not_active');
+        const provision = z
+            .object({ operation: z.object({ id: z.string() }) })
+            .parse(
+                await (
+                    await worker.call('/api/worker/v1/operations/claim')
+                ).json(),
+            ).operation;
+        await close(provision.id, 'succeeded');
+
+        const failing = await requestConversion(
+            db,
+            actor,
+            created.environment_id,
+        );
+        expect(
+            await refused(requestConversion(db, actor, created.environment_id)),
+        ).toBe('operation_pending');
+        const claimed = convertSchema.parse(
+            await (await worker.call('/api/worker/v1/operations/claim')).json(),
+        ).operation;
+        expect(claimed.id).toBe(failing.id);
+        expect(claimed.parameters.name).toBe('Produksi');
+        await close(failing.id, 'failed');
+        const [afterFailure] = await pool.unsafe(
+            'select kind, status, expires_at is not null as expires from environments where id = $1',
+            [created.environment_id],
+        );
+        expect({ ...afterFailure }).toEqual({
+            kind: 'demo',
+            status: 'active',
+            expires: true,
+        });
+
+        const converting = await requestConversion(
+            db,
+            actor,
+            created.environment_id,
+        );
+        convertSchema.parse(
+            await (await worker.call('/api/worker/v1/operations/claim')).json(),
+        );
+        await close(converting.id, 'succeeded');
+        const [converted] = await pool.unsafe(
+            'select kind, slug, name, status, outbound_allowed, expires_at from environments where id = $1',
+            [created.environment_id],
+        );
+        expect({ ...converted }).toEqual({
+            kind: 'production',
+            slug: 'production',
+            name: 'Produksi',
+            status: 'active',
+            outbound_allowed: true,
+            expires_at: null,
+        });
+        expect(
+            await refused(requestConversion(db, actor, created.environment_id)),
+        ).toBe('environment_not_demo');
+    });
+
+    test('convert ditolak bila tenant sudah punya produksi, dan penutupan yang kalah balapan ditutup gagal', async () => {
+        const worker = await host();
+        const actor = { operatorId: await operator(), ipAddress: null };
+        const created = await customer(worker.id);
+        await worker.call(
+            `/api/worker/v1/operations/${
+                z
+                    .object({ operation: z.object({ id: z.string() }) })
+                    .parse(
+                        await (
+                            await worker.call('/api/worker/v1/operations/claim')
+                        ).json(),
+                    ).operation.id
+            }/steps`,
+            { status: 'succeeded', step: 'done' },
+        );
+        const environmentId = Bun.randomUUIDv7();
+        await db.execute(
+            `insert into environments (id, tenant_id, kind, name, slug, database_name, status, expires_at,
+                outbound_allowed, hosting, runtime_host_id, schema_migrated_at, created_at, updated_at)
+             values ($1, $2, 'demo', 'Uji coba', 'demo', null, 'active', now() + interval '30 days', false, 'provider',
+                $3, now(), now(), now())`,
+            [environmentId, created.tenant_id, worker.id],
+        );
+        await expect(
+            requestConversion(db, actor, environmentId),
+        ).rejects.toMatchObject({ body: { error: 'production_exists' } });
+
+        // Produksi lama dihapus lunak, konversi diminta, lalu produksi lain muncul sebelum worker menutupnya.
+        await db.execute(
+            "update environments set deleted_at = now(), purge_after = now() + interval '30 days', status = 'soft_deleted' where id = $1",
+            [created.environment_id],
+        );
+        const converting = await requestConversion(db, actor, environmentId);
+        const claimed = z
+            .object({
+                operation: z.object({
+                    id: z.string(),
+                    parameters: z.object({ name: z.string() }),
+                }),
+            })
+            .parse(
+                await (
+                    await worker.call('/api/worker/v1/operations/claim')
+                ).json(),
+            ).operation;
+        expect(claimed).toMatchObject({
+            id: converting.id,
+            parameters: { name: 'Uji coba' },
+        });
+        await db.execute(
+            'update environments set deleted_at = null, purge_after = null, status = $2 where id = $1',
+            [created.environment_id, 'active'],
+        );
+        await worker.call(`/api/worker/v1/operations/${converting.id}/steps`, {
+            status: 'succeeded',
+            step: 'done',
+        });
+        const [row] = await pool.unsafe(
+            `select e.kind, e.status, o.status as operation, o.failure_message
+             from environments e join environment_operations o on o.environment_id = e.id
+             where o.id = $1`,
+            [converting.id],
+        );
+        expect(row).toMatchObject({
+            kind: 'demo',
+            status: 'active',
+            operation: 'failed',
+        });
+        expect(row?.failure_message).toContain('produksi lain');
     });
 });

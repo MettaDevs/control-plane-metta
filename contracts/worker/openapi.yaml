@@ -29,7 +29,9 @@ info:
       lingkungannya menjadi `degraded`. Langkah dan penutupan dari worker yang tidak lagi memegang operasi dijawab
       `409 operation_not_held`; worker itu harus berhenti.
     - Penutupan `succeeded` operasi `provision` dan `migrate` membuat lingkungan `active`; `failed` membuatnya
-      `degraded`. Setiap penutupan membuang `parameters.admin.password_hash`.
+      `degraded`. Penutupan `convert` membiarkan lingkungan `active` apa pun hasilnya, termasuk bila tenggatnya habis,
+      karena demo yang gagal dikonversi masih utuh dan sedang dipakai. Setiap penutupan membuang
+      `parameters.admin.password_hash`.
 
     ## Operasi
 
@@ -38,6 +40,10 @@ info:
     - `migrate`: menjalankan migration Core yang belum terpasang di database lingkungan yang sudah disiapkan, sampai
       skemanya sama dengan kode worker. Parameternya `MigrateParameters`. Hanya diminta untuk lingkungan dengan
       database sendiri yang penyiapannya pernah selesai.
+    - `convert`: menjadikan demo produksi di tempat. Worker memindah alamat lingkungan di runtime dari
+      `<tenant_slug>.demo.<base>` ke `<tenant_slug>.<base>` dengan nama barunya; database dan isinya tidak berubah.
+      Parameternya `ConvertParameters`. Jenis lingkungan di control plane baru menjadi `production` saat penutupan
+      `succeeded` diterima.
 servers:
   - url: /api/worker/v1
 paths:
@@ -172,7 +178,7 @@ components:
           format: uuid
         operation:
           type: string
-          enum: [provision, migrate]
+          enum: [provision, migrate, convert]
         environment_id:
           type: string
           format: uuid
@@ -180,10 +186,11 @@ components:
           type: string
           format: date-time
         parameters:
-          description: '`ProvisionParameters` untuk `provision`, `MigrateParameters` untuk `migrate`.'
+          description: '`ProvisionParameters` untuk `provision`, `MigrateParameters` untuk `migrate`, `ConvertParameters` untuk `convert`.'
           oneOf:
             - $ref: '#/components/schemas/ProvisionParameters'
             - $ref: '#/components/schemas/MigrateParameters'
+            - $ref: '#/components/schemas/ConvertParameters'
     ProvisionParameters:
       description: |
         Permintaan penyiapan operations-metta (`provisionRequestSchema` di `src/platform/environment/` repo itu),
@@ -234,6 +241,22 @@ components:
         database:
           type: string
           pattern: '^[a-z][a-z0-9_]{0,62}$'
+    ConvertParameters:
+      type: object
+      additionalProperties: false
+      required: [tenant_slug, database, name]
+      properties:
+        tenant_slug:
+          type: string
+        database:
+          description: Database lingkungan demo; null berarti database bersama runtime.
+          type: [string, 'null']
+          pattern: '^[a-z][a-z0-9_]{0,62}$'
+        name:
+          description: Nama lingkungan sesudah menjadi produksi.
+          type: string
+          minLength: 1
+          maxLength: 100
     Step:
       type: object
       additionalProperties: false

@@ -10,7 +10,11 @@ import { HttpFailure } from '../../platform/http/index.ts';
 // antrean dibaca.
 export const leaseMinutes = 30;
 
-export const environmentOperations = ['provision', 'migrate'] as const;
+export const environmentOperations = [
+    'provision',
+    'migrate',
+    'convert',
+] as const;
 export type EnvironmentOperation = (typeof environmentOperations)[number];
 
 const now = "now() at time zone 'utc'";
@@ -36,10 +40,11 @@ async function expireStale(db: Database): Promise<void> {
             update environment_operations set ${closing('failed')},
                 failure_message = 'Tenggat habis: worker berhenti melapor sebelum operasi selesai. Periksa database lingkungannya sebelum meminta ulang.'
             where status = 'running' and lease_until < ${now}
-            returning environment_id
+            returning environment_id, operation
          )
          update environments set status = 'degraded', updated_at = ${now}
-         where id in (select environment_id from expired) and status in ('provisioning', 'active')`,
+         where id in (select environment_id from expired where operation <> 'convert')
+           and status in ('provisioning', 'active')`,
     );
 }
 
@@ -83,15 +88,42 @@ export const stepSchema = z.strictObject({
 });
 export type Step = z.infer<typeof stepSchema>;
 
-// Status lingkungan sesudah operasinya ditutup. Penyiapan yang gagal meninggalkan lingkungan degraded, bukan
-// provisioning, supaya konsol tahu ada yang harus diperiksa.
+// Status lingkungan sesudah operasinya ditutup, dan apakah penutupan sukses berarti skemanya baru dimigrasi.
+// Penyiapan dan migrate yang gagal meninggalkan lingkungan degraded supaya konsol tahu ada yang harus diperiksa.
+// Konversi yang gagal tidak: demo yang gagal dikonversi masih utuh dan sedang dipakai prospeknya, jadi tetap active,
+// termasuk bila tenggatnya habis.
 const environmentAfter = {
-    provision: { succeeded: 'active', failed: 'degraded' },
-    migrate: { succeeded: 'active', failed: 'degraded' },
+    provision: { succeeded: 'active', failed: 'degraded', migrates: true },
+    migrate: { succeeded: 'active', failed: 'degraded', migrates: true },
+    convert: { succeeded: 'active', failed: 'active', migrates: false },
 } as const satisfies Record<
     EnvironmentOperation,
-    Record<'succeeded' | 'failed', string>
+    { succeeded: string; failed: string; migrates: boolean }
 >;
+
+// Demo menjadi produksi: jenis, slug, sambungan keluar, dan tanggal berakhir dalam satu pernyataan, karena CHECK
+// environments_keluar_ikut_jenis menolak jenis dan sambungan keluar yang berubah sendiri-sendiri. Nama bawaan "Demo"
+// ikut menjadi "Produksi"; nama pilihan operator dipertahankan. Mengembalikan pesan gagal bila tenant ini sudah
+// memperoleh produksi lain sejak konversi diminta.
+async function promoteToProduction(
+    db: Database,
+    environmentId: string,
+): Promise<string | null> {
+    try {
+        await db.transaction(() =>
+            db.execute(
+                `update environments set kind = 'production', slug = 'production', outbound_allowed = true,
+                    expires_at = null, name = case when name = 'Demo' then 'Produksi' else name end, updated_at = ${now}
+                 where id = $1 and kind = 'demo'`,
+                [environmentId],
+            ),
+        );
+        return null;
+    } catch (error) {
+        if (sqlErrorCode(error) !== '23505') throw error;
+        return 'Tenant ini memperoleh produksi lain sejak konversi diminta, jadi demo ini tidak dijadikan produksi. Worker sudah memindah alamat produksi di runtime ke database demo ini; periksa kedua lingkungan sebelum melanjutkan.';
+    }
+}
 
 // Langkah running memperpanjang tenggat; succeeded dan failed menutup operasi dan mengubah status lingkungannya dalam
 // transaksi yang sama. null berarti operasi tidak lagi dipegang host ini, dan worker harus berhenti.
@@ -123,25 +155,29 @@ export async function recordStep(
                     [operationId, step.step, leaseMinutes],
                 )) ?? null
             );
+        const promotionFailure =
+            held.operation === 'convert' && step.status === 'succeeded'
+                ? await promoteToProduction(db, held.environment_id)
+                : null;
+        const status = promotionFailure ? 'failed' : step.status;
         const failure =
-            step.status === 'failed'
+            promotionFailure ??
+            (step.status === 'failed'
                 ? step.failure_message?.trim() ||
                   'Worker melaporkan gagal tanpa menyebut sebabnya.'
-                : null;
+                : null);
+        const after = environmentAfter[held.operation];
         await db.execute(
-            `update environment_operations set ${closing(step.status)}, step = $2, failure_message = $3 where id = $1`,
+            `update environment_operations set ${closing(status)}, step = $2, failure_message = $3 where id = $1`,
             [operationId, step.step, failure],
         );
         await db.execute(
             `update environments set status = $2, updated_at = ${now}${
-                step.status === 'succeeded'
+                status === 'succeeded' && after.migrates
                     ? `, schema_migrated_at = ${now}`
                     : ''
             } where id = $1`,
-            [
-                held.environment_id,
-                environmentAfter[held.operation][step.status],
-            ],
+            [held.environment_id, after[status]],
         );
         return { lease_until: null };
     });
@@ -184,30 +220,9 @@ export async function requestMigration(
                 message:
                     'Penyiapan lingkungan ini belum pernah selesai, jadi skemanya belum bisa diperbarui.',
             });
-        try {
-            // Savepoint: transaksi PostgreSQL batal seluruhnya bila 23505 ditangkap tanpanya.
-            await db.transaction(() =>
-                db.execute(
-                    `insert into environment_operations (id, environment_id, operation, status, requested_by, parameters,
-                        requested_at)
-                     values ($1, $2, 'migrate', 'requested', $3, $4::text::jsonb, ${now})`,
-                    [
-                        id,
-                        environmentId,
-                        actor.operatorId,
-                        JSON.stringify({ database: environment.database_name }),
-                    ],
-                ),
-            );
-        } catch (error) {
-            if (sqlErrorCode(error) === '23505')
-                throw new HttpFailure(409, {
-                    error: 'operation_pending',
-                    message:
-                        'Lingkungan ini masih punya operasi yang belum selesai.',
-                });
-            throw error;
-        }
+        await insertOperation(db, id, environmentId, 'migrate', actor, {
+            database: environment.database_name,
+        });
         await recordAudit(db, {
             ...actor,
             action: 'environment.operation.requested',
@@ -217,4 +232,106 @@ export async function requestMigration(
         });
         return { id };
     });
+}
+
+// Meminta worker menjadikan demo produksi di tempat, beserta datanya: data yang diisi prospek selama demo adalah
+// alasan ia membeli. Hanya demo aktif milik tenant yang belum punya produksi. Worker memindah alamatnya di runtime dari
+// `<tenant>.demo.<base>` ke `<tenant>.<base>`; jenis lingkungan di sini baru berubah saat worker menutupnya sukses.
+export async function requestConversion(
+    db: Database,
+    actor: { operatorId: string; ipAddress: string | null },
+    environmentId: string,
+): Promise<{ id: string }> {
+    const id = Bun.randomUUIDv7();
+    return db.transaction(async () => {
+        const environment = await db.one(
+            z.object({
+                kind: z.string(),
+                status: z.string(),
+                hosting: z.string(),
+                name: z.string(),
+                database_name: z.string().nullable(),
+                tenant_slug: z.string(),
+                has_production: z.boolean(),
+            }),
+            `select e.kind, e.status, e.hosting, e.name, e.database_name, t.slug as tenant_slug,
+                exists (select 1 from environments p where p.tenant_id = e.tenant_id and p.kind = 'production'
+                        and p.deleted_at is null) as has_production
+             from environments e join tenants t on t.id = e.tenant_id
+             where e.id = $1 and e.deleted_at is null for update of e`,
+            [environmentId],
+        );
+        if (!environment)
+            throw new HttpFailure(404, {
+                error: 'environment_not_found',
+                message: 'Lingkungan tidak ditemukan.',
+            });
+        if (environment.kind !== 'demo' || environment.hosting !== 'provider')
+            throw new HttpFailure(409, {
+                error: 'environment_not_demo',
+                message:
+                    'Hanya lingkungan demo yang bisa dijadikan produksi. Sandbox adalah salinan produksi, jadi menjadikannya produksi berarti dua tempat berisi data yang sama.',
+            });
+        if (environment.status !== 'active')
+            throw new HttpFailure(409, {
+                error: 'environment_not_active',
+                message:
+                    'Demo ini belum aktif, jadi belum ada yang bisa dijadikan produksi.',
+            });
+        if (environment.has_production)
+            throw new HttpFailure(409, {
+                error: 'production_exists',
+                message:
+                    'Tenant ini sudah punya produksi. Satu tenant hanya punya satu produksi, jadi tentukan dulu nasib produksi yang ada.',
+            });
+        await insertOperation(db, id, environmentId, 'convert', actor, {
+            tenant_slug: environment.tenant_slug,
+            database: environment.database_name,
+            name: environment.name === 'Demo' ? 'Produksi' : environment.name,
+        });
+        await recordAudit(db, {
+            ...actor,
+            action: 'environment.operation.requested',
+            subjectType: 'environment',
+            subjectId: environmentId,
+            detail: { operation_id: id, operation: 'convert' },
+        });
+        return { id };
+    });
+}
+
+// Satu operasi terbuka per lingkungan dijaga index unik, jadi permintaan kedua dijawab 409. Savepoint, karena transaksi
+// PostgreSQL batal seluruhnya bila 23505 ditangkap tanpanya.
+async function insertOperation(
+    db: Database,
+    id: string,
+    environmentId: string,
+    operation: EnvironmentOperation,
+    actor: { operatorId: string },
+    parameters: Record<string, unknown>,
+): Promise<void> {
+    try {
+        await db.transaction(() =>
+            db.execute(
+                `insert into environment_operations (id, environment_id, operation, status, requested_by, parameters,
+                    requested_at)
+                 values ($1, $2, $3, 'requested', $4, $5::text::jsonb, ${now})`,
+                [
+                    id,
+                    environmentId,
+                    operation,
+                    actor.operatorId,
+                    JSON.stringify(parameters),
+                ],
+            ),
+        );
+    } catch (error) {
+        if (sqlErrorCode(error) === '23505')
+            throw new HttpFailure(409, {
+                error: 'operation_pending',
+                message:
+                    'Lingkungan ini masih punya operasi yang belum selesai.',
+            });
+        throw error;
+    }
 }

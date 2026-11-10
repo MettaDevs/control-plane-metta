@@ -277,7 +277,7 @@ const environmentStatusSchema = z.enum([
     'degraded',
     'suspended',
 ]);
-const operationNameSchema = z.enum(['provision', 'migrate']);
+const operationNameSchema = z.enum(['provision', 'migrate', 'convert']);
 const operationStatusSchema = z.enum([
     'requested',
     'running',
