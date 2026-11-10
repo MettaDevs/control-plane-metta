@@ -268,6 +268,23 @@ export async function createCustomer(
     });
 }
 
+const environmentKindSchema = z.enum(['production', 'sandbox', 'demo']);
+const environmentStatusSchema = z.enum([
+    'provisioning',
+    'copying',
+    'active',
+    'maintenance',
+    'degraded',
+    'suspended',
+]);
+const operationNameSchema = z.enum(['provision']);
+const operationStatusSchema = z.enum([
+    'requested',
+    'running',
+    'succeeded',
+    'failed',
+]);
+
 const customerRowSchema = z.object({
     client_id: z.string(),
     legal_name: z.string(),
@@ -276,27 +293,15 @@ const customerRowSchema = z.object({
     environments: z.array(
         z.object({
             id: z.string(),
-            kind: z.enum(['production', 'sandbox', 'demo']),
+            kind: environmentKindSchema,
             name: z.string(),
-            status: z.enum([
-                'provisioning',
-                'copying',
-                'active',
-                'maintenance',
-                'degraded',
-                'suspended',
-            ]),
+            status: environmentStatusSchema,
             expires_at: z.string().nullable(),
             operation: z
                 .object({
                     id: z.string(),
-                    operation: z.enum(['provision']),
-                    status: z.enum([
-                        'requested',
-                        'running',
-                        'succeeded',
-                        'failed',
-                    ]),
+                    operation: operationNameSchema,
+                    status: operationStatusSchema,
                     step: z.string().nullable(),
                     failure_message: z.string().nullable(),
                 })
@@ -321,4 +326,85 @@ export async function listCustomers(db: Database) {
          from clients c join tenants t on t.client_id = c.id
          order by c.legal_name, t.slug`,
     );
+}
+
+const iso = (column: string) =>
+    `to_char(${column}, 'YYYY-MM-DD"T"HH24:MI:SS"Z"')`;
+
+const customerDetailSchema = z.object({
+    client_id: z.string(),
+    legal_name: z.string(),
+    slug: z.string(),
+    created_at: z.string().nullable(),
+    tenants: z.array(
+        z.object({
+            id: z.string(),
+            name: z.string(),
+            slug: z.string(),
+            environments: z.array(
+                z.object({
+                    id: z.string(),
+                    kind: environmentKindSchema,
+                    name: z.string(),
+                    status: environmentStatusSchema,
+                    database_name: z.string().nullable(),
+                    runtime_host: z.string().nullable(),
+                    expires_at: z.string().nullable(),
+                    created_at: z.string().nullable(),
+                    operations: z.array(
+                        z.object({
+                            id: z.string(),
+                            operation: operationNameSchema,
+                            status: operationStatusSchema,
+                            step: z.string().nullable(),
+                            failure_message: z.string().nullable(),
+                            requested_by: z.string().nullable(),
+                            requested_at: z.string(),
+                            started_at: z.string().nullable(),
+                            finished_at: z.string().nullable(),
+                            lease_until: z.string().nullable(),
+                        }),
+                    ),
+                }),
+            ),
+        }),
+    ),
+});
+
+// Satu customer dengan setiap tenant, lingkungan, dan 20 operasi terakhir tiap lingkungan. Langkah yang tercatat hanya
+// langkah terakhir setiap operasi; worker tidak menyimpan riwayat langkah.
+export async function findCustomer(db: Database, clientId: string) {
+    const customer = await db.one(
+        customerDetailSchema,
+        `select c.id as client_id, c.legal_name, c.slug, ${iso('c.created_at')} as created_at,
+            coalesce((select json_agg(json_build_object(
+                'id', t.id, 'name', t.name, 'slug', t.slug,
+                'environments', coalesce((select json_agg(json_build_object(
+                    'id', e.id, 'kind', e.kind, 'name', e.name, 'status', e.status,
+                    'database_name', e.database_name, 'runtime_host', h.name,
+                    'expires_at', to_char(e.expires_at, 'YYYY-MM-DD'),
+                    'created_at', ${iso('e.created_at')},
+                    'operations', coalesce((select json_agg(json_build_object(
+                        'id', o.id, 'operation', o.operation, 'status', o.status, 'step', o.step,
+                        'failure_message', o.failure_message, 'requested_by', op.name,
+                        'requested_at', ${iso('o.requested_at')}, 'started_at', ${iso('o.started_at')},
+                        'finished_at', ${iso('o.finished_at')}, 'lease_until', ${iso('o.lease_until')})
+                        order by o.requested_at desc, o.id desc)
+                        from (select * from environment_operations where environment_id = e.id
+                              order by requested_at desc, id desc limit 20) o
+                        left join operators op on op.id = o.requested_by), '[]'))
+                    order by e.created_at)
+                    from environments e left join runtime_hosts h on h.id = e.runtime_host_id
+                    where e.tenant_id = t.id and e.deleted_at is null), '[]'))
+                order by t.slug)
+                from tenants t where t.client_id = c.id), '[]') as tenants
+         from clients c where c.id = $1`,
+        [clientId],
+    );
+    if (!customer)
+        throw new HttpFailure(404, {
+            error: 'customer_not_found',
+            message: 'Customer tidak ditemukan.',
+        });
+    return customer;
 }

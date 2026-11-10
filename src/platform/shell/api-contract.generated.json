@@ -223,6 +223,17 @@
             "route": { "method": "GET", "path": "/api/v1/customers" }
         }
     },
+    "showCustomer": {
+        "~orpc": {
+            "errorMap": {},
+            "meta": {},
+            "route": {
+                "method": "GET",
+                "path": "/api/v1/customers/{client}",
+                "inputStructure": "detailed"
+            }
+        }
+    },
     "createCustomer": {
         "~orpc": {
             "errorMap": {},
@@ -232,6 +243,25 @@
                 "path": "/api/v1/customers",
                 "inputStructure": "detailed",
                 "successStatus": 201
+            }
+        }
+    },
+    "listRuntimeHosts": {
+        "~orpc": {
+            "errorMap": {},
+            "meta": {},
+            "route": { "method": "GET", "path": "/api/v1/runtime-hosts" }
+        }
+    },
+    "revokeRuntimeHost": {
+        "~orpc": {
+            "errorMap": {},
+            "meta": {},
+            "route": {
+                "method": "POST",
+                "path": "/api/v1/runtime-hosts/{host}/revoke",
+                "inputStructure": "detailed",
+                "successStatus": 204
             }
         }
     }

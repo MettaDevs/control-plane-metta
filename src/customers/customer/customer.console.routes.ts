@@ -5,6 +5,7 @@ import {
     createCustomer,
     customerInputErrors,
     customerInputSchema,
+    findCustomer,
     listCustomers,
 } from './customer.service.ts';
 
@@ -22,6 +23,16 @@ export function customerConsoleRoutes(session: ConsoleSession) {
             .route({ method: 'GET', path: '/api/v1/customers' })
             .handler(async ({ context }) => ({
                 customers: await listCustomers(context.db),
+            })),
+        showCustomer: operatorProcedure
+            .route({
+                method: 'GET',
+                path: '/api/v1/customers/{client}',
+                inputStructure: 'detailed',
+            })
+            .input(z.object({ params: z.object({ client: z.uuid() }) }))
+            .handler(async ({ context, input }) => ({
+                customer: await findCustomer(context.db, input.params.client),
             })),
         // Header Idempotency-Key wajib: konsol yang mengulang permintaan karena jawaban hilang tidak membuat customer
         // kedua, dan password sementara hanya tampil di jawaban pertama.
