@@ -1,0 +1,232 @@
+openapi: 3.1.0
+info:
+  title: control-plane-metta — API worker lingkungan
+  version: 1.0.0
+  description: |
+    Dipanggil **worker operations-metta** (`src/worker.ts` di repo itu) yang berjalan di host runtime, yaitu server
+    tempat lingkungan milik kita berjalan. Worker menarik pekerjaan: ia mengambil satu operasi lingkungan, menjalankan
+    perintah penyiapan di database lingkungannya, melaporkan langkahnya, lalu menutupnya. Control plane tidak pernah
+    memanggil masuk ke operations-metta.
+
+    File ini ditulis tangan dan merupakan sumber kebenaran. Test worker di operations-metta memvalidasi permintaannya
+    terhadap file ini; mengubah salah satu sisi berarti mengubah keduanya.
+
+    ## Tanda tangan
+
+    Setiap permintaan ditandatangani seperti API agen (`contracts/agent/openapi.yaml`): HTTP Message Signatures
+    (RFC 9421) dengan label `sig1`, komponen `"@method" "@path" "content-digest"`, parameter `created`, `keyid`, `alg`
+    dalam urutan itu, `alg="rsa-v1_5-sha256"`, dan `Content-Digest: sha-256=:<base64>:` atas isi request (isi kosong
+    juga). `keyid` adalah id host runtime (uuid), yang dicetak `bun dist/cli.js add-runtime-host` saat kunci publiknya
+    didaftarkan. Selisih jam paling banyak 300 detik. Host yang dicabut, tidak dikenal, atau tanda tangan yang salah
+    dijawab sama: `401 signature_invalid`.
+
+    ## Antrean
+
+    - Satu lingkungan punya paling banyak satu operasi terbuka.
+    - Lingkungan terikat ke host pertama yang mengambil operasinya; host lain tidak pernah melihat operasinya lagi.
+      Operasi lingkungan yang sudah terikat ke host itu didahulukan.
+    - Tenggat 30 menit, diperpanjang setiap langkah `running`. Tenggat yang lewat ditutup gagal saat antrean dibaca, dan
+      lingkungannya menjadi `degraded`. Langkah dan penutupan dari worker yang tidak lagi memegang operasi dijawab
+      `409 operation_not_held`; worker itu harus berhenti.
+    - Penutupan `succeeded` operasi `provision` membuat lingkungan `active`; `failed` membuatnya `degraded`. Setiap
+      penutupan membuang `parameters.admin.password_hash`.
+servers:
+  - url: /api/worker/v1
+paths:
+  /operations/claim:
+    post:
+      operationId: claimEnvironmentOperation
+      summary: Mengambil operasi tertua yang boleh dijalankan host ini
+      parameters:
+        - $ref: '#/components/parameters/SignatureInput'
+        - $ref: '#/components/parameters/Signature'
+        - $ref: '#/components/parameters/ContentDigest'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+      responses:
+        '200':
+          description: Operasi yang sekarang dipegang host ini sampai `lease_until`.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [operation]
+                properties:
+                  operation:
+                    $ref: '#/components/schemas/ClaimedOperation'
+        '204':
+          description: Tidak ada operasi yang boleh diambil.
+        '401':
+          $ref: '#/components/responses/SignatureInvalid'
+  /operations/{operation}/steps:
+    post:
+      operationId: recordEnvironmentStep
+      summary: Melaporkan langkah, atau menutup operasi
+      parameters:
+        - name: operation
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/SignatureInput'
+        - $ref: '#/components/parameters/Signature'
+        - $ref: '#/components/parameters/ContentDigest'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Step'
+      responses:
+        '200':
+          description: Langkah tercatat. `lease_until` tenggat baru untuk `running`, null untuk penutupan.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [lease_until]
+                properties:
+                  lease_until:
+                    type: [string, 'null']
+                    format: date-time
+        '401':
+          $ref: '#/components/responses/SignatureInvalid'
+        '409':
+          description: Operasi tidak lagi dipegang host ini (milik host lain, sudah ditutup, atau tenggatnya lewat).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: operation_not_held
+        '422':
+          description: Isi langkah tidak sah.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: step_invalid
+components:
+  parameters:
+    SignatureInput:
+      name: Signature-Input
+      in: header
+      required: true
+      schema:
+        type: string
+      example: 'sig1=("@method" "@path" "content-digest");created=1762700000;keyid="0196f1c2-0000-7000-8000-000000000000";alg="rsa-v1_5-sha256"'
+    Signature:
+      name: Signature
+      in: header
+      required: true
+      schema:
+        type: string
+    ContentDigest:
+      name: Content-Digest
+      in: header
+      required: true
+      schema:
+        type: string
+  responses:
+    SignatureInvalid:
+      description: Tanda tangan, host, atau waktunya tidak sah.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: signature_invalid
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+    ClaimedOperation:
+      type: object
+      required: [id, operation, environment_id, parameters, lease_until]
+      properties:
+        id:
+          type: string
+          format: uuid
+        operation:
+          type: string
+          enum: [provision]
+        environment_id:
+          type: string
+          format: uuid
+        lease_until:
+          type: string
+          format: date-time
+        parameters:
+          $ref: '#/components/schemas/ProvisionParameters'
+    ProvisionParameters:
+      description: |
+        Permintaan penyiapan operations-metta (`provisionRequestSchema` di `src/platform/environment/` repo itu),
+        apa adanya. `admin.password_hash` adalah hash bcrypt password sementara admin pertama; plaintext-nya hanya
+        pernah tampil sekali di konsol.
+      type: object
+      required: [environment, database, client, tenant, admin]
+      properties:
+        environment:
+          type: object
+          required: [kind, name]
+          properties:
+            kind:
+              type: string
+              enum: [production, sandbox, demo]
+            name:
+              type: string
+        database:
+          type: [string, 'null']
+          pattern: '^[a-z][a-z0-9_]{0,62}$'
+        client:
+          type: object
+          required: [id, legal_name, slug]
+          properties:
+            id: { type: string, format: uuid }
+            legal_name: { type: string }
+            slug: { type: string }
+        tenant:
+          type: object
+          required: [id, name, slug]
+          properties:
+            id: { type: string, format: uuid }
+            name: { type: string }
+            slug: { type: string }
+        admin:
+          type: object
+          required: [id, name, email, password_hash]
+          properties:
+            id: { type: string, format: uuid }
+            name: { type: string }
+            email: { type: string, format: email }
+            password_hash: { type: string }
+    Step:
+      type: object
+      additionalProperties: false
+      required: [status, step]
+      properties:
+        status:
+          type: string
+          enum: [running, succeeded, failed]
+        step:
+          type: string
+          minLength: 1
+          maxLength: 60
+        failure_message:
+          type: [string, 'null']
+          maxLength: 4000
