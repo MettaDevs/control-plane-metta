@@ -14,6 +14,8 @@ const environmentSchema = z.object({
     SESSION_COOKIE: z.string().default('control_plane_session'),
     SESSION_LIFETIME: z.coerce.number().int().positive().default(120),
     SESSION_SECURE_COOKIE: z.enum(['true', 'false']).default('true'),
+    // Hasil build peramban untuk layar konsol (`bun run build`). Hanya proses konsol yang membacanya.
+    CLIENT_DIR: z.string().min(1).default('dist/client'),
     // SSO operator. Keempatnya diisi bersama, atau dikosongkan bersama untuk mematikan SSO.
     CONSOLE_SSO_ISSUER: z.url().optional(),
     CONSOLE_SSO_CLIENT_ID: z.string().min(1).optional(),

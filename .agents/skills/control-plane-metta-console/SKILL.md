@@ -24,6 +24,7 @@ difference found there is reported to the product owner to decide whether to cop
 | Operator SSO (OpenID Connect) | `src/platform/operator-identity/sso/` |
 | Encryption of 2FA secrets and the SSO ceremony cookie | `src/platform/operator-identity/secret-box.ts` |
 | Operator audit trail | `src/platform/audit/` (`recordAudit()`) |
+| Console screens: login (password, 2FA, SSO button), customer list, new customer | `src/platform/shell/`, `src/customers/customer/*.console.page.tsx`, UI kit `packages/ui`; served by `src/platform/http/spa.ts` in the console process only |
 | Central schema | `database/migrations/`: `0001_baseline.sql` (the 24 central tables of CoreERP), then operators, their 2FA columns, and `operator_identities` |
 
 Routes, environment variables, and the rules of these parts are in `AGENTS.md`, section "Konsol dan portal". Read them
@@ -44,7 +45,7 @@ the CoreERP code for the behaviour, then port it into the place that the "Susuna
 | Console settings | `src/settings/` | [`Settings.php`](https://github.com/MettaDevs/coreERP/blob/main/apps/control-plane/app/Http/Controllers/Settings.php), [`SettingsLicense.php`](https://github.com/MettaDevs/coreERP/blob/main/apps/control-plane/app/Http/Controllers/SettingsLicense.php), [`app/Console/Commands/`](https://github.com/MettaDevs/coreERP/tree/main/apps/control-plane/app/Console/Commands) |
 | Releases, Harbor, registry credentials | `src/releases/`; see skill `control-plane-metta-release` | [`app/Registry/`](https://github.com/MettaDevs/coreERP/tree/main/apps/control-plane/app/Registry), [`ReleaseRegistry.php`](https://github.com/MettaDevs/coreERP/blob/main/apps/control-plane/app/Sites/ReleaseRegistry.php) |
 | Old product tenants | `src/products/` | [`ProductTenants.php`](https://github.com/MettaDevs/coreERP/blob/main/apps/control-plane/app/Products/ProductTenants.php) |
-| Console screens | `*.console.page.tsx` in the feature folder, frame in `src/platform/shell/`; the UI framework is not chosen | [`resources/js/pages/`](https://github.com/MettaDevs/coreERP/tree/main/apps/control-plane/resources/js/pages) |
+| Console screens other than login, the customer list, and new customer | `*.console.page.tsx` in the feature folder, frame in `src/platform/shell/`; SPA on TanStack Router and Query, see `AGENTS.md` section "Layar" | [`resources/js/pages/`](https://github.com/MettaDevs/coreERP/tree/main/apps/control-plane/resources/js/pages) |
 | SSO and passkeys for customer users | No code here; the tables `external_identities`, `tenant_identity_providers`, `sso_login_attempts`, and `passkeys` exist only in the baseline | [`docs/dev/32-sso.md`](https://github.com/MettaDevs/coreERP/blob/main/docs/dev/32-sso.md) |
 
 ## Canonical sources

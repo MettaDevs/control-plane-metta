@@ -8,6 +8,7 @@ import {
     startErrorReporting,
 } from '../error-reporting/index.ts';
 import type { Context } from './rpc.ts';
+import type { ClientBuild } from './spa.ts';
 
 type Application = {
     handle(request: Request, clientAddress?: string): Promise<Response>;
@@ -15,10 +16,12 @@ type Application = {
 };
 
 // Satu proses, satu router. Konsol dan agen memanggil fungsi ini dengan router audiensnya masing-masing, jadi rute
-// yang tidak ada di router itu tidak bisa dijangkau dari prosesnya.
+// yang tidak ada di router itu tidak bisa dijangkau dari prosesnya. Hanya proses yang memberi `client` menyajikan
+// layar; proses lain menjawab URL layar dengan 404 JSON seperti alamat lain yang tidak ada.
 export function createApplication(
     config: Config,
     router: Router<any, Context>,
+    client: ClientBuild | null = null,
 ): Application {
     const pool = createPool(config);
     const handler = new OpenAPIHandler(router, {
@@ -27,6 +30,9 @@ export function createApplication(
     });
     return {
         async handle(request, clientAddress = '') {
+            // Berkas build dan dokumen layar tidak membuka koneksi database.
+            const served = await client?.serve(request);
+            if (served) return served;
             const db = new Database(pool);
             const copy = request.clone();
             let body: Promise<Uint8Array<ArrayBuffer>> | undefined;
@@ -68,9 +74,10 @@ export function serve(
     name: string,
     config: Config,
     router: Router<any, Context>,
+    client: ClientBuild | null = null,
 ): { stop: () => Promise<void> } {
     startErrorReporting(config, name);
-    const application = createApplication(config, router);
+    const application = createApplication(config, router, client);
     const app = new Elysia({ aot: true, precompile: true });
     app.all(
         '*',

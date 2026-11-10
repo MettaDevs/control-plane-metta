@@ -1,6 +1,9 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import { z } from 'zod';
+import { consoleRouter } from '../../../../src/console.ts';
+import { loadConfig } from '../../../../src/platform/config/index.ts';
 import { Database } from '../../../../src/platform/database/index.ts';
+import { createApplication } from '../../../../src/platform/http/index.ts';
 import { createOperator } from '../../../../src/platform/operator-identity/index.ts';
 import { consoleTestApp } from '../../../support/console-app.ts';
 
@@ -86,4 +89,39 @@ describe.skipIf(!process.env.DB_HOST)('operator login', () => {
         expect(blocked.status).toBe(429);
         expect(Number(blocked.headers.get('Retry-After'))).toBeGreaterThan(0);
     });
+});
+
+// Layar login membaca ini sebelum ada sesi untuk memutuskan apakah tombol SSO tampil. Tidak menyentuh database.
+test('login options say whether SSO is configured', async () => {
+    const base = {
+        DB_HOST: '127.0.0.1',
+        DB_PORT: '1',
+        DB_DATABASE: 'unused',
+        DB_USERNAME: 'unused',
+        DB_PASSWORD: 'unused',
+        APP_KEY: 'base64:' + Buffer.alloc(32, 5).toString('base64'),
+    };
+    for (const [environment, sso] of [
+        [base, false],
+        [
+            {
+                ...base,
+                CONSOLE_SSO_ISSUER: 'https://sso.example.com',
+                CONSOLE_SSO_CLIENT_ID: 'console',
+                CONSOLE_SSO_CLIENT_SECRET: 'not-a-secret',
+                CONSOLE_SSO_REDIRECT_URI:
+                    'https://console.example.com/sso/callback',
+            },
+            true,
+        ],
+    ] as const) {
+        const config = loadConfig(environment);
+        const application = createApplication(config, consoleRouter(config));
+        const response = await application.handle(
+            new Request('http://localhost/api/v1/login-options'),
+        );
+        expect(response.status).toBe(200);
+        expect(await response.json()).toEqual({ sso });
+        await application.close();
+    }
 });
