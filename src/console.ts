@@ -1,4 +1,5 @@
 // Proses konsol operator. Di-deploy di host internal; rute untuk agen dan portal tidak dimuat di sini.
+import { customerConsoleRoutes } from './customers/index.console.ts';
 import { type Config, loadConfig } from './platform/config/index.ts';
 import { healthRoutes, serve } from './platform/http/index.ts';
 import {
@@ -15,6 +16,7 @@ export function consoleRouter(config: Config) {
         ...operatorIdentityRoutes(config, session),
         ...siteConsoleRoutes(config, session),
         ...releaseConsoleRoutes(session),
+        ...customerConsoleRoutes(session),
     };
 }
 
