@@ -9,7 +9,7 @@ const staleAfterSeconds = 180;
 const iso = (column: string) =>
     `to_char(${column}, 'YYYY-MM-DD"T"HH24:MI:SS"Z"')`;
 
-const siteColumns = `s.id, s.name, s.tenant_id, t.name as tenant_name, s.server_address, s.reported_release,
+const siteColumns = `s.id, s.name, s.tenant_id, t.name as tenant_name, s.server_address, s.edition, s.reported_release,
     ${iso('s.last_seen_at')} as last_seen_at,
     case when s.revoked_at is not null then 'revoked'
          when s.public_key is null then 'not_enrolled'
@@ -22,6 +22,7 @@ export const siteSchema = z.object({
     tenant_id: z.string(),
     tenant_name: z.string(),
     server_address: z.string().nullable(),
+    edition: z.string(),
     reported_release: z.string().nullable(),
     last_seen_at: z.string().nullable(),
     state: z.enum(['not_enrolled', 'active', 'stale', 'revoked']),
