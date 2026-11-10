@@ -57,6 +57,8 @@ export function operationName(operation: Operation['operation']): string {
             return 'Jadikan produksi';
         case 'expire':
             return 'Kedaluwarsa';
+        case 'restore':
+            return 'Pemulihan';
         default: {
             const unknown: never = operation;
             return unknown;

@@ -6,6 +6,7 @@ import { addRuntimeHost } from '../../../src/environments/index.ts';
 import {
     requestConversion,
     requestMigration,
+    requestRestore,
 } from '../../../src/environments/operation/environment-operation.service.ts';
 import { loadConfig } from '../../../src/platform/config/index.ts';
 import { createPool, Database } from '../../../src/platform/database/index.ts';
@@ -644,5 +645,131 @@ describe.skipIf(!process.env.DB_HOST)('worker environment queue', () => {
         });
         await claim();
         expect(await expires()).toBe(2);
+    });
+
+    test('restore menyalakan lagi demo yang dihapus selama masa tenggang, dengan status lama dan tanggal berakhir baru', async () => {
+        const worker = await host();
+        const actor = { operatorId: await operator(), ipAddress: null };
+        const created = await createCustomer(db, actor, crypto.randomUUID(), {
+            legal_name: 'PT Klinik Pulih',
+            slug: `restore-${crypto.randomUUID().slice(-12)}`,
+            admin: { name: 'Admin', email: 'admin@restore.test' },
+            environment: {
+                kind: 'demo',
+                name: 'Demo',
+                expires_at: '2099-01-31',
+            },
+        });
+        const environmentId = created.environment_id;
+        await db.execute(
+            'update environments set runtime_host_id = $2 where id = $1',
+            [environmentId, worker.id],
+        );
+        const operationSchema = z.object({
+            operation: z.object({
+                id: z.string(),
+                operation: z.string(),
+                environment_id: z.string(),
+                parameters: z.record(z.string(), z.unknown()),
+            }),
+        });
+        // Operasi lingkungan ini yang diambil host; operasi tinggalan berkas test lain diabaikan.
+        const claimOwn = async () => {
+            for (let attempt = 0; attempt < 20; attempt++) {
+                const response = await worker.call(
+                    '/api/worker/v1/operations/claim',
+                );
+                if (response.status !== 200) break;
+                const { operation } = operationSchema.parse(
+                    await response.json(),
+                );
+                if (operation.environment_id === environmentId)
+                    return operation;
+            }
+            throw new Error('Operasi lingkungan ini tidak diambil.');
+        };
+        const close = (id: string, status: 'succeeded' | 'failed') =>
+            worker.call(`/api/worker/v1/operations/${id}/steps`, {
+                status,
+                step: status === 'succeeded' ? 'done' : 'failed',
+                ...(status === 'failed'
+                    ? { failure_message: 'alamat demo tidak tercatat' }
+                    : {}),
+            });
+        const refused = (expiresAt?: string) =>
+            requestRestore(db, actor, environmentId, expiresAt).then(
+                () => null,
+                (error: unknown) =>
+                    z.object({ status: z.number() }).parse(error).status,
+            );
+        await close((await claimOwn()).id, 'succeeded');
+        expect(await refused('2099-12-31')).toBe(409);
+
+        await db.execute(
+            "update environments set expires_at = now() at time zone 'utc' - interval '1 day' where id = $1",
+            [environmentId],
+        );
+        const expire = await claimOwn();
+        expect(expire.operation).toBe('expire');
+        await close(expire.id, 'succeeded');
+
+        expect(await refused()).toBe(422);
+        expect(await refused('2000-01-01')).toBe(422);
+        const failing = await requestRestore(
+            db,
+            actor,
+            environmentId,
+            '2099-12-31',
+        );
+        expect(await refused('2099-12-31')).toBe(409);
+        const claimed = await claimOwn();
+        expect(claimed).toMatchObject({
+            id: failing.id,
+            operation: 'restore',
+            parameters: { kind: 'demo' },
+        });
+        expect(Object.keys(claimed.parameters).sort()).toEqual([
+            'database',
+            'kind',
+            'tenant_slug',
+        ]);
+        await close(failing.id, 'failed');
+        const state = async () => {
+            const [row] = await pool.unsafe(
+                `select status, deleted_at is null as live, purge_after is null as kept,
+                    to_char(expires_at, 'YYYY-MM-DD') as expires_at
+                 from environments where id = $1`,
+                [environmentId],
+            );
+            return { ...row };
+        };
+        expect(await state()).toMatchObject({
+            status: 'soft_deleted',
+            live: false,
+        });
+
+        const restoring = await requestRestore(
+            db,
+            actor,
+            environmentId,
+            '2099-12-31',
+        );
+        expect((await claimOwn()).id).toBe(restoring.id);
+        await close(restoring.id, 'succeeded');
+        expect(await state()).toEqual({
+            status: 'active',
+            live: true,
+            kept: true,
+            expires_at: '2099-12-31',
+        });
+        expect(await refused('2099-12-31')).toBe(409);
+
+        // Masa tenggang yang habis tidak bisa dipulihkan.
+        await db.execute(
+            `update environments set status = 'soft_deleted', deleted_at = now() at time zone 'utc' - interval '31 days',
+                purge_after = now() at time zone 'utc' - interval '1 day' where id = $1`,
+            [environmentId],
+        );
+        expect(await refused('2099-12-31')).toBe(409);
     });
 });

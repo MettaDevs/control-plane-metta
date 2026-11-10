@@ -3,6 +3,7 @@ import type { ConsoleSession } from '../../platform/operator-identity/index.cons
 import {
     requestConversion,
     requestMigration,
+    requestRestore,
 } from './environment-operation.service.ts';
 
 export function environmentOperationConsoleRoutes(session: ConsoleSession) {
@@ -18,7 +19,9 @@ export function environmentOperationConsoleRoutes(session: ConsoleSession) {
                 z.object({
                     params: z.object({ environment: z.uuid() }),
                     body: z.object({
-                        operation: z.enum(['migrate', 'convert']),
+                        operation: z.enum(['migrate', 'convert', 'restore']),
+                        // Tanggal berakhir baru, wajib saat memulihkan demo.
+                        expires_at: z.iso.date().optional(),
                     }),
                 }),
             )
@@ -36,6 +39,13 @@ export function environmentOperationConsoleRoutes(session: ConsoleSession) {
                             context.db,
                             actor,
                             environment,
+                        );
+                    case 'restore':
+                        return requestRestore(
+                            context.db,
+                            actor,
+                            environment,
+                            input.body.expires_at,
                         );
                     default: {
                         const unknown: never = input.body.operation;

@@ -15,6 +15,7 @@ export const environmentOperations = [
     'migrate',
     'convert',
     'expire',
+    'restore',
 ] as const;
 export type EnvironmentOperation = (typeof environmentOperations)[number];
 
@@ -101,7 +102,8 @@ export async function claimOperation(
             `with next as (
                 select o.id, o.environment_id from environment_operations o
                 join environments e on e.id = o.environment_id
-                where o.status = 'requested' and e.hosting = 'provider' and e.deleted_at is null
+                where o.status = 'requested' and e.hosting = 'provider'
+                  and (e.deleted_at is null or o.operation = 'restore')
                   and (e.runtime_host_id is null or e.runtime_host_id = $1)
                 order by e.runtime_host_id is null, o.requested_at, o.id limit 1
                 for update of o, e skip locked
@@ -137,6 +139,7 @@ const environmentAfter = {
     migrate: { succeeded: 'active', failed: 'degraded', migrates: true },
     convert: { succeeded: 'active', failed: null, migrates: false },
     expire: { succeeded: null, failed: null, migrates: false },
+    restore: { succeeded: null, failed: null, migrates: false },
 } as const satisfies Record<
     EnvironmentOperation,
     { succeeded: string | null; failed: string | null; migrates: boolean }
@@ -191,6 +194,61 @@ async function promoteToProduction(
     }
 }
 
+// Status yang boleh dikembalikan apa adanya dari catatan expire. copying tidak: penyalinannya sudah lama mati. Tanpa
+// catatan yang dapat dipercaya, lingkungan kembali degraded, karena isinya ada tetapi tidak ada yang tahu ia sehat.
+const restorableStatuses = new Set([
+    'provisioning',
+    'active',
+    'maintenance',
+    'degraded',
+    'suspended',
+]);
+
+// Melepas hapus lunak: status, deleted_at, dan purge_after dalam satu pernyataan, cermin softDelete. Demo mendapat
+// tanggal berakhir baru yang dipilih operator saat meminta, supaya ia tidak langsung kedaluwarsa lagi. Mengembalikan
+// pesan gagal bila tenant ini sudah memperoleh lingkungan hidup lain dengan jenis yang sama.
+async function releaseDeletion(
+    db: Database,
+    operationId: string,
+    environmentId: string,
+): Promise<string | null> {
+    const request = await db.one(
+        z.object({
+            expires_at: z.string().nullable(),
+            previous_status: z.string().nullable(),
+        }),
+        `select o.detail ->> 'expires_at' as expires_at,
+            (select x.detail ->> 'previous_status' from environment_operations x
+             where x.environment_id = o.environment_id and x.operation = 'expire' and x.status = 'succeeded'
+             order by x.finished_at desc, x.id desc limit 1) as previous_status
+         from environment_operations o where o.id = $1`,
+        [operationId],
+    );
+    const status =
+        request?.previous_status &&
+        restorableStatuses.has(request.previous_status)
+            ? request.previous_status
+            : 'degraded';
+    try {
+        await db.transaction(() =>
+            db.execute(
+                `update environments set status = $2, deleted_at = null, purge_after = null,
+                    expires_at = case when kind = 'demo' then $3::date else expires_at end, updated_at = ${now}
+                 where id = $1 and deleted_at is not null and purged_at is null`,
+                [environmentId, status, request?.expires_at ?? null],
+            ),
+        );
+    } catch (error) {
+        if (sqlErrorCode(error) !== '23505') throw error;
+        return 'Tenant ini memperoleh lingkungan hidup lain dengan jenis yang sama sejak pemulihan diminta, jadi lingkungan ini tetap dihapus. Worker sudah menyalakan lagi alamatnya di runtime; periksa kedua lingkungan sebelum melanjutkan.';
+    }
+    await db.execute(
+        'update environment_operations set detail = detail || $2::text::jsonb where id = $1',
+        [operationId, JSON.stringify({ restored_status: status })],
+    );
+    return null;
+}
+
 // Langkah running memperpanjang tenggat; succeeded dan failed menutup operasi dan mengubah status lingkungannya dalam
 // transaksi yang sama. null berarti operasi tidak lagi dipegang host ini, dan worker harus berhenti.
 export async function recordStep(
@@ -223,9 +281,17 @@ export async function recordStep(
                 )) ?? null
             );
         const promotionFailure =
-            held.operation === 'convert' && step.status === 'succeeded'
-                ? await promoteToProduction(db, held.environment_id)
-                : null;
+            step.status !== 'succeeded'
+                ? null
+                : held.operation === 'convert'
+                  ? await promoteToProduction(db, held.environment_id)
+                  : held.operation === 'restore'
+                    ? await releaseDeletion(
+                          db,
+                          operationId,
+                          held.environment_id,
+                      )
+                    : null;
         const status = promotionFailure ? 'failed' : step.status;
         const failure =
             promotionFailure ??
@@ -385,19 +451,22 @@ async function insertOperation(
     operation: EnvironmentOperation,
     actor: { operatorId: string },
     parameters: Record<string, unknown>,
+    // Keputusan yang hanya dibaca control plane saat penutupan, tidak dikirim ke worker.
+    detail: Record<string, unknown> = {},
 ): Promise<void> {
     try {
         await db.transaction(() =>
             db.execute(
                 `insert into environment_operations (id, environment_id, operation, status, requested_by, parameters,
-                    requested_at)
-                 values ($1, $2, $3, 'requested', $4, $5::text::jsonb, ${now})`,
+                    detail, requested_at)
+                 values ($1, $2, $3, 'requested', $4, $5::text::jsonb, $6::text::jsonb, ${now})`,
                 [
                     id,
                     environmentId,
                     operation,
                     actor.operatorId,
                     JSON.stringify(parameters),
+                    JSON.stringify(detail),
                 ],
             ),
         );
@@ -410,4 +479,98 @@ async function insertOperation(
             });
         throw error;
     }
+}
+
+// Meminta worker menyalakan lagi alamat lingkungan yang dihapus lunak, selama isinya masih ada: belum dibuang, dan masa
+// tenggangnya belum habis (sesudahnya pemulihan berbalapan dengan pembuangan). Satu tenant hanya punya satu lingkungan
+// hidup per jenis, karena alamatnya hanya memuat tenant dan jenis. Demo wajib diberi tanggal berakhir baru.
+export async function requestRestore(
+    db: Database,
+    actor: { operatorId: string; ipAddress: string | null },
+    environmentId: string,
+    expiresAt: string | undefined,
+): Promise<{ id: string }> {
+    const id = Bun.randomUUIDv7();
+    return db.transaction(async () => {
+        const environment = await db.one(
+            z.object({
+                kind: z.string(),
+                hosting: z.string(),
+                deleted: z.boolean(),
+                purged: z.boolean(),
+                grace_over: z.boolean(),
+                bound: z.boolean(),
+                database_name: z.string().nullable(),
+                tenant_slug: z.string(),
+                occupied: z.boolean(),
+            }),
+            `select e.kind, e.hosting, e.deleted_at is not null as deleted, e.purged_at is not null as purged,
+                coalesce(e.purge_after <= ${now}, false) as grace_over, e.runtime_host_id is not null as bound,
+                e.database_name, t.slug as tenant_slug,
+                exists (select 1 from environments o where o.tenant_id = e.tenant_id and o.kind = e.kind
+                        and o.deleted_at is null and o.id <> e.id) as occupied
+             from environments e join tenants t on t.id = e.tenant_id
+             where e.id = $1 for update of e`,
+            [environmentId],
+        );
+        if (!environment)
+            throw new HttpFailure(404, {
+                error: 'environment_not_found',
+                message: 'Lingkungan tidak ditemukan.',
+            });
+        if (!environment.deleted)
+            throw new HttpFailure(409, {
+                error: 'environment_not_deleted',
+                message: 'Lingkungan ini tidak sedang dihapus.',
+            });
+        if (environment.purged || environment.grace_over)
+            throw new HttpFailure(409, {
+                error: 'environment_purged',
+                message:
+                    'Masa tenggang lingkungan ini sudah habis, jadi isinya boleh dibuang kapan saja dan tidak bisa dipulihkan.',
+            });
+        if (environment.hosting !== 'provider' || !environment.bound)
+            throw new HttpFailure(409, {
+                error: 'environment_not_restorable',
+                message:
+                    'Lingkungan ini tidak pernah berjalan di host runtime kita, jadi tidak ada alamat yang bisa dinyalakan lagi.',
+            });
+        if (environment.occupied)
+            throw new HttpFailure(409, {
+                error: 'environment_kind_taken',
+                message:
+                    'Tenant ini sudah punya lingkungan hidup dengan jenis yang sama, jadi lingkungan ini tidak bisa dipulihkan.',
+            });
+        const today = new Date().toISOString().slice(0, 10);
+        if (environment.kind === 'demo' && (!expiresAt || expiresAt <= today))
+            throw new HttpFailure(422, {
+                message: 'Periksa isian pemulihan.',
+                errors: {
+                    expires_at: [
+                        'Pilih tanggal berakhir demo yang baru, paling cepat besok.',
+                    ],
+                },
+            });
+        await insertOperation(
+            db,
+            id,
+            environmentId,
+            'restore',
+            actor,
+            {
+                tenant_slug: environment.tenant_slug,
+                kind: environment.kind,
+                database: environment.database_name,
+            },
+            { expires_at: environment.kind === 'demo' ? expiresAt : null },
+        );
+        await recordAudit(db, {
+            ...actor,
+            action: 'environment.operation.requested',
+            subjectType: 'environment',
+            subjectId: environmentId,
+            detail: { operation_id: id, operation: 'restore' },
+        });
+        return { id };
+    });
 }

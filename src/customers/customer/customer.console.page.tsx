@@ -1,7 +1,23 @@
 import { Badge } from '@control-plane-metta/ui/badge';
 import { Button } from '@control-plane-metta/ui/button';
 import { DataTable, DataTableText } from '@control-plane-metta/ui/data-table';
-import { displayDate } from '@control-plane-metta/ui/date-picker';
+import {
+    DatePicker,
+    dateValue,
+    displayDate,
+} from '@control-plane-metta/ui/date-picker';
+import {
+    Dialog,
+    DialogAction,
+    DialogBody,
+    DialogCancel,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from '@control-plane-metta/ui/dialog';
+import { FormControl } from '@control-plane-metta/ui/form-control';
 import { RecordActionBar } from '@control-plane-metta/ui/record-action-bar';
 import { useConfirmation } from '@control-plane-metta/ui/use-confirmation';
 import {
@@ -10,10 +26,12 @@ import {
     useSuspenseQuery,
 } from '@tanstack/react-query';
 import { useParams } from '@tanstack/react-router';
+import { useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { toast } from 'sonner';
 import {
     definePage,
+    ApiError,
     errorText,
     orpc,
     type ApiOutput,
@@ -78,6 +96,119 @@ function LeaseNote({ operation }: { operation: Operation }): ReactNode {
     );
 }
 
+function tomorrow(): string {
+    const date = new Date();
+    date.setDate(date.getDate() + 1);
+    return dateValue(date);
+}
+
+// Demo yang dipulihkan wajib diberi tanggal berakhir baru; tanpa itu ia langsung kedaluwarsa lagi. Lingkungan lain
+// cukup dikonfirmasi.
+function RestoreDialog({
+    environment,
+    open,
+    onOpenChange,
+}: {
+    environment: Environment;
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
+}): ReactNode {
+    const queryClient = useQueryClient();
+    const content = useRef<HTMLDivElement>(null);
+    const [expiresAt, setExpiresAt] = useState('');
+    const [error, setError] = useState<string | null>(null);
+    const demo = environment.kind === 'demo';
+    const restore = useMutation(
+        orpc.requestEnvironmentOperation.mutationOptions({
+            onMutate: () => setError(null),
+            onSuccess: async () => {
+                toast.success('Pemulihan menunggu diambil worker.');
+                onOpenChange(false);
+                await queryClient.invalidateQueries({
+                    queryKey: orpc.showCustomer.key(),
+                });
+            },
+            onError: (caught) =>
+                setError(
+                    caught instanceof ApiError && caught.errors.expires_at
+                        ? (caught.errors.expires_at[0] ?? caught.message)
+                        : errorText(caught, 'Pemulihan belum diminta.'),
+                ),
+        }),
+    );
+    return (
+        <Dialog
+            open={open}
+            onOpenChange={(next) => {
+                if (!next) {
+                    setExpiresAt('');
+                    setError(null);
+                }
+                onOpenChange(next);
+            }}
+        >
+            <DialogContent size="compact" ref={content}>
+                <form
+                    className="contents"
+                    onSubmit={(event) => {
+                        event.preventDefault();
+                        if (demo && !expiresAt) {
+                            setError('Pilih tanggal berakhir demo yang baru.');
+                            return;
+                        }
+                        restore.mutate({
+                            params: { environment: environment.id },
+                            body: {
+                                operation: 'restore',
+                                ...(demo ? { expires_at: expiresAt } : {}),
+                            },
+                        });
+                    }}
+                >
+                    <DialogHeader>
+                        <DialogTitle>Pulihkan lingkungan ini?</DialogTitle>
+                        <DialogDescription>
+                            Alamatnya dinyalakan lagi, dan lingkungan kembali ke
+                            keadaannya sebelum dihapus beserta seluruh isinya.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogBody className="flex flex-col gap-3">
+                        {demo && (
+                            <FormControl error={error ?? undefined}>
+                                <DatePicker
+                                    label="Demo berakhir"
+                                    required
+                                    min={tomorrow()}
+                                    value={expiresAt}
+                                    onValueChange={setExpiresAt}
+                                    portalContainer={content}
+                                />
+                            </FormControl>
+                        )}
+                        {!demo && error && (
+                            <p
+                                role="alert"
+                                className="text-sm text-destructive"
+                            >
+                                {error}
+                            </p>
+                        )}
+                    </DialogBody>
+                    <DialogFooter>
+                        <DialogAction
+                            type="submit"
+                            disabled={restore.isPending}
+                        >
+                            {restore.isPending ? 'Meminta…' : 'Pulihkan'}
+                        </DialogAction>
+                        <DialogCancel />
+                    </DialogFooter>
+                </form>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
 function EnvironmentSection({
     environment,
     tenantHasProduction,
@@ -124,6 +255,13 @@ function EnvironmentSection({
             : tenantHasProduction
               ? 'Tenant ini sudah punya produksi.'
               : busyReason;
+    const [restoreOpen, setRestoreOpen] = useState(false);
+    const graceOver =
+        environment.purge_after !== null &&
+        new Date(environment.purge_after) <= new Date();
+    const restoreUnavailable = graceOver
+        ? 'Masa tenggangnya sudah habis.'
+        : busyReason;
     async function ask(
         operation: 'migrate' | 'convert',
         question: { title: string; description: string; confirmLabel: string },
@@ -141,6 +279,19 @@ function EnvironmentSection({
                     <EnvironmentName environment={environment} />
                 </h2>
                 <Badge variant={status.variant}>{status.label}</Badge>
+                {environment.status === 'soft_deleted' && (
+                    <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="ml-auto"
+                        disabled={restoreUnavailable !== null}
+                        title={restoreUnavailable ?? undefined}
+                        onClick={() => setRestoreOpen(true)}
+                    >
+                        Pulihkan
+                    </Button>
+                )}
                 {environment.status !== 'soft_deleted' && (
                     <div className="ml-auto flex flex-wrap gap-2">
                         {environment.kind === 'demo' && (
@@ -275,6 +426,13 @@ function EnvironmentSection({
                 ]}
             />
             {confirmation}
+            {restoreOpen && (
+                <RestoreDialog
+                    environment={environment}
+                    open={restoreOpen}
+                    onOpenChange={setRestoreOpen}
+                />
+            )}
         </section>
     );
 }
