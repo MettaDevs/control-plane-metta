@@ -10,7 +10,7 @@ export function agentRouter(config: Config) {
         ...healthRoutes(),
         ...siteAgentRoutes(config),
         ...releaseAgentRoutes(config),
-        ...environmentOperationAgentRoutes(),
+        ...environmentOperationAgentRoutes(config),
     };
 }
 

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { Config } from '../../platform/config/index.ts';
 import { base, HttpFailure } from '../../platform/http/index.ts';
 import { parseSignature } from '../../sites/index.ts';
 import {
@@ -46,7 +47,7 @@ const signedWorker = base.use(async ({ context, next }) => {
     return next({ context: { host, json } });
 });
 
-export function environmentOperationAgentRoutes() {
+export function environmentOperationAgentRoutes(config: Config) {
     return {
         claimEnvironmentOperation: signedWorker
             .route({
@@ -82,6 +83,7 @@ export function environmentOperationAgentRoutes() {
                     context.host.id,
                     input.params.operation,
                     step.data,
+                    config.ENVIRONMENT_PURGE_GRACE_DAYS,
                 );
                 if (!result) throw workerError(409, 'operation_not_held');
                 return result;

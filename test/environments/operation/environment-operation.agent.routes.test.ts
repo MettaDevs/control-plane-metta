@@ -535,4 +535,114 @@ describe.skipIf(!process.env.DB_HOST)('worker environment queue', () => {
         });
         expect(row?.failure_message).toContain('produksi lain');
     });
+
+    test('demo yang lewat tanggal diantrekan expire saat host meminta, gagal tidak mengubahnya, sukses menghapus lunak', async () => {
+        const worker = await host();
+        const actor = { operatorId: await operator(), ipAddress: null };
+        const created = await createCustomer(db, actor, crypto.randomUUID(), {
+            legal_name: 'PT Klinik Kedaluwarsa',
+            slug: `expire-${crypto.randomUUID().slice(-12)}`,
+            admin: { name: 'Admin', email: 'admin@expire.test' },
+            environment: {
+                kind: 'demo',
+                name: 'Demo',
+                expires_at: '2099-01-31',
+            },
+        });
+        await db.execute(
+            'update environments set runtime_host_id = $2 where id = $1',
+            [created.environment_id, worker.id],
+        );
+        const claim = async () => {
+            const response = await worker.call(
+                '/api/worker/v1/operations/claim',
+            );
+            return response.status === 200
+                ? z
+                      .object({
+                          operation: z.object({
+                              id: z.string(),
+                              operation: z.string(),
+                              environment_id: z.string(),
+                              parameters: z.record(z.string(), z.unknown()),
+                          }),
+                      })
+                      .parse(await response.json()).operation
+                : null;
+        };
+        // Host lain di database test yang sama boleh meninggalkan operasi yang belum terikat, jadi yang diperiksa adalah
+        // antrean expire lingkungan ini, bukan apakah claim menjawab kosong.
+        const expires = async () =>
+            (
+                await pool.unsafe(
+                    "select count(*)::int as count from environment_operations where environment_id = $1 and operation = 'expire'",
+                    [created.environment_id],
+                )
+            )[0]?.count;
+        const close = (id: string, status: 'succeeded' | 'failed') =>
+            worker.call(`/api/worker/v1/operations/${id}/steps`, {
+                status,
+                step: status === 'succeeded' ? 'done' : 'failed',
+                ...(status === 'failed'
+                    ? { failure_message: 'alamat demo menunjuk database lain' }
+                    : {}),
+            });
+        const provision = await claim();
+        expect(provision?.operation).toBe('provision');
+        await close(provision!.id, 'succeeded');
+        // Belum lewat tanggalnya: tidak ada yang diantrekan.
+        await claim();
+        expect(await expires()).toBe(0);
+
+        await db.execute(
+            "update environments set expires_at = now() at time zone 'utc' - interval '1 day' where id = $1",
+            [created.environment_id],
+        );
+        const failing = await claim();
+        expect(failing).toMatchObject({
+            operation: 'expire',
+            environment_id: created.environment_id,
+        });
+        const [tenant] = await pool.unsafe(
+            'select t.slug, e.database_name from environments e join tenants t on t.id = e.tenant_id where e.id = $1',
+            [created.environment_id],
+        );
+        expect(failing?.parameters).toEqual({
+            tenant_slug: tenant?.slug,
+            database: tenant?.database_name,
+        });
+        await close(failing!.id, 'failed');
+        const [afterFailure] = await pool.unsafe(
+            'select status, deleted_at is null as live from environments where id = $1',
+            [created.environment_id],
+        );
+        expect({ ...afterFailure }).toEqual({ status: 'active', live: true });
+        // Baru gagal: tidak diantrekan ulang dalam sejam.
+        await claim();
+        expect(await expires()).toBe(1);
+
+        await db.execute(
+            "update environment_operations set finished_at = finished_at - interval '2 hours' where id = $1",
+            [failing!.id],
+        );
+        const retry = await claim();
+        expect(retry?.operation).toBe('expire');
+        await close(retry!.id, 'succeeded');
+        const [deleted] = await pool.unsafe(
+            `select e.status, e.deleted_at is not null as deleted,
+                round(extract(epoch from e.purge_after - e.deleted_at) / 86400)::int as grace_days,
+                o.detail ->> 'previous_status' as previous_status
+             from environments e join environment_operations o on o.environment_id = e.id
+             where o.id = $1`,
+            [retry!.id],
+        );
+        expect({ ...deleted }).toEqual({
+            status: 'soft_deleted',
+            deleted: true,
+            grace_days: 30,
+            previous_status: 'active',
+        });
+        await claim();
+        expect(await expires()).toBe(2);
+    });
 });

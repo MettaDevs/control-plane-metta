@@ -45,6 +45,14 @@ const environmentSchema = z.object({
         .min(1)
         .max(30)
         .default(1),
+    // Berapa hari isi lingkungan yang dihapus lunak (misalnya demo yang kedaluwarsa) masih disimpan sebelum boleh
+    // dibuang permanen. Minimal sehari, supaya hapus lunak dan buang permanen tidak pernah jatuh di hari yang sama.
+    ENVIRONMENT_PURGE_GRACE_DAYS: z.coerce
+        .number()
+        .int()
+        .min(1)
+        .max(3650)
+        .default(30),
 });
 
 export type SsoSettings = {

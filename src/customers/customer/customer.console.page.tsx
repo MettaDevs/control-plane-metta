@@ -141,47 +141,50 @@ function EnvironmentSection({
                     <EnvironmentName environment={environment} />
                 </h2>
                 <Badge variant={status.variant}>{status.label}</Badge>
-                <div className="ml-auto flex flex-wrap gap-2">
-                    {environment.kind === 'demo' && (
+                {environment.status !== 'soft_deleted' && (
+                    <div className="ml-auto flex flex-wrap gap-2">
+                        {environment.kind === 'demo' && (
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                disabled={
+                                    convertUnavailable !== null ||
+                                    request.isPending
+                                }
+                                title={convertUnavailable ?? undefined}
+                                onClick={() =>
+                                    void ask('convert', {
+                                        title: 'Jadikan demo ini produksi?',
+                                        description:
+                                            'Seluruh data yang diisi selama demo ikut menjadi data produksi. Alamatnya pindah dari alamat demo ke alamat produksi klinik ini, jadi pengguna perlu login lagi di alamat baru. Tanggal berakhir demo dilepas. Produksi tidak bisa dikembalikan menjadi demo.',
+                                        confirmLabel: 'Jadikan produksi',
+                                    })
+                                }
+                            >
+                                Jadikan produksi
+                            </Button>
+                        )}
                         <Button
                             type="button"
                             variant="outline"
                             size="sm"
                             disabled={
-                                convertUnavailable !== null || request.isPending
+                                migrateUnavailable !== null || request.isPending
                             }
-                            title={convertUnavailable ?? undefined}
+                            title={migrateUnavailable ?? undefined}
                             onClick={() =>
-                                void ask('convert', {
-                                    title: 'Jadikan demo ini produksi?',
-                                    description:
-                                        'Seluruh data yang diisi selama demo ikut menjadi data produksi. Alamatnya pindah dari alamat demo ke alamat produksi klinik ini, jadi pengguna perlu login lagi di alamat baru. Tanggal berakhir demo dilepas. Produksi tidak bisa dikembalikan menjadi demo.',
-                                    confirmLabel: 'Jadikan produksi',
+                                void ask('migrate', {
+                                    title: 'Perbarui skema database?',
+                                    description: `Worker di ${environment.runtime_host ?? 'host runtime'} menjalankan migration yang belum terpasang di ${environment.database_name ?? 'database ini'}, sampai skemanya sama dengan versi aplikasi di host itu. Migration tidak dapat dibatalkan setelah berjalan.`,
+                                    confirmLabel: 'Perbarui skema',
                                 })
                             }
                         >
-                            Jadikan produksi
+                            Perbarui skema
                         </Button>
-                    )}
-                    <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={
-                            migrateUnavailable !== null || request.isPending
-                        }
-                        title={migrateUnavailable ?? undefined}
-                        onClick={() =>
-                            void ask('migrate', {
-                                title: 'Perbarui skema database?',
-                                description: `Worker di ${environment.runtime_host ?? 'host runtime'} menjalankan migration yang belum terpasang di ${environment.database_name ?? 'database ini'}, sampai skemanya sama dengan versi aplikasi di host itu. Migration tidak dapat dibatalkan setelah berjalan.`,
-                                confirmLabel: 'Perbarui skema',
-                            })
-                        }
-                    >
-                        Perbarui skema
-                    </Button>
-                </div>
+                    </div>
+                )}
             </div>
             <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <Fact label="Database">{environment.database_name ?? '-'}</Fact>
@@ -196,6 +199,11 @@ function EnvironmentSection({
                         ? displayDate(environment.expires_at)
                         : '-'}
                 </Fact>
+                {environment.purge_after && (
+                    <Fact label="Isinya dibuang setelah">
+                        {displayTime(environment.purge_after)}
+                    </Fact>
+                )}
             </dl>
             <DataTable
                 data={environment.operations}

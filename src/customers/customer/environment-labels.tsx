@@ -38,6 +38,8 @@ export function environmentStatus(status: Environment['status']): {
             return { label: 'Bermasalah', variant: 'destructive' };
         case 'suspended':
             return { label: 'Dihentikan sementara', variant: 'outline' };
+        case 'soft_deleted':
+            return { label: 'Dihapus', variant: 'outline' };
         default: {
             const unknown: never = status;
             return { label: unknown, variant: 'outline' };
@@ -53,6 +55,8 @@ export function operationName(operation: Operation['operation']): string {
             return 'Pembaruan skema';
         case 'convert':
             return 'Jadikan produksi';
+        case 'expire':
+            return 'Kedaluwarsa';
         default: {
             const unknown: never = operation;
             return unknown;
