@@ -276,8 +276,14 @@ const environmentStatusSchema = z.enum([
     'maintenance',
     'degraded',
     'suspended',
+    'soft_deleted',
 ]);
-const operationNameSchema = z.enum(['provision', 'migrate', 'convert']);
+const operationNameSchema = z.enum([
+    'provision',
+    'migrate',
+    'convert',
+    'expire',
+]);
 const operationStatusSchema = z.enum([
     'requested',
     'running',
@@ -310,7 +316,8 @@ const customerRowSchema = z.object({
     ),
 });
 
-// Setiap customer dengan lingkungannya dan operasi terakhir tiap lingkungan, untuk layar daftar customer.
+// Setiap customer dengan lingkungannya dan operasi terakhir tiap lingkungan, untuk layar daftar customer. Lingkungan
+// yang dihapus lunak ikut tampil sampai isinya dibuang, karena masih bisa dipulihkan.
 export async function listCustomers(db: Database) {
     return db.rows(
         customerRowSchema,
@@ -322,7 +329,7 @@ export async function listCustomers(db: Database) {
                         'step', o.step, 'failure_message', o.failure_message)
                     from environment_operations o where o.environment_id = e.id
                     order by o.requested_at desc limit 1)) order by e.created_at)
-                from environments e where e.tenant_id = t.id and e.deleted_at is null), '[]') as environments
+                from environments e where e.tenant_id = t.id and e.purged_at is null), '[]') as environments
          from clients c join tenants t on t.client_id = c.id
          order by c.legal_name, t.slug`,
     );
@@ -353,6 +360,8 @@ const customerDetailSchema = z.object({
                     provisioned: z.boolean(),
                     expires_at: z.string().nullable(),
                     created_at: z.string().nullable(),
+                    // Lingkungan yang dihapus lunak tetap tampil sampai isinya boleh dibuang.
+                    purge_after: z.string().nullable(),
                     operations: z.array(
                         z.object({
                             id: z.string(),
@@ -386,7 +395,7 @@ export async function findCustomer(db: Database, clientId: string) {
                     'database_name', e.database_name, 'runtime_host', h.name,
                     'provisioned', e.schema_migrated_at is not null,
                     'expires_at', to_char(e.expires_at, 'YYYY-MM-DD'),
-                    'created_at', ${iso('e.created_at')},
+                    'created_at', ${iso('e.created_at')}, 'purge_after', ${iso('e.purge_after')},
                     'operations', coalesce((select json_agg(json_build_object(
                         'id', o.id, 'operation', o.operation, 'status', o.status, 'step', o.step,
                         'failure_message', o.failure_message, 'requested_by', op.name,
@@ -398,7 +407,7 @@ export async function findCustomer(db: Database, clientId: string) {
                         left join operators op on op.id = o.requested_by), '[]'))
                     order by e.created_at)
                     from environments e left join runtime_hosts h on h.id = e.runtime_host_id
-                    where e.tenant_id = t.id and e.deleted_at is null), '[]'))
+                    where e.tenant_id = t.id and e.purged_at is null), '[]'))
                 order by t.slug)
                 from tenants t where t.client_id = c.id), '[]') as tenants
          from clients c where c.id = $1`,

@@ -14,6 +14,7 @@ export const environmentOperations = [
     'provision',
     'migrate',
     'convert',
+    'expire',
 ] as const;
 export type EnvironmentOperation = (typeof environmentOperations)[number];
 
@@ -43,9 +44,47 @@ async function expireStale(db: Database): Promise<void> {
             returning environment_id, operation
          )
          update environments set status = 'degraded', updated_at = ${now}
-         where id in (select environment_id from expired where operation <> 'convert')
+         where id in (select environment_id from expired where operation in ('provision', 'migrate'))
            and status in ('provisioning', 'active')`,
     );
+}
+
+// Demo yang tanggal berakhirnya sudah lewat diantrekan sebagai operasi expire setiap kali host pemegangnya meminta
+// pekerjaan, jadi tidak ada penjadwal yang harus dijalankan terpisah. Status tidak disaring: demo yang degraded pun
+// kedaluwarsa. Lingkungan yang masih punya operasi terbuka dilewati oleh index unik, dan expire yang baru saja gagal
+// tidak diantrekan ulang selama sejam supaya worker tidak mengulang kegagalan yang sama setiap kali meminta.
+const expireRetryMinutes = 60;
+
+async function enqueueExpired(db: Database, hostId: string): Promise<void> {
+    const expired = await db.rows(
+        z.object({
+            id: z.string(),
+            tenant_slug: z.string(),
+            database_name: z.string().nullable(),
+        }),
+        `select e.id, t.slug as tenant_slug, e.database_name
+         from environments e join tenants t on t.id = e.tenant_id
+         where e.runtime_host_id = $1 and e.kind = 'demo' and e.hosting = 'provider' and e.deleted_at is null
+           and e.expires_at <= ${now}
+           and not exists (select 1 from environment_operations x where x.environment_id = e.id
+                           and x.status in ('requested', 'running'))
+           and not exists (select 1 from environment_operations x where x.environment_id = e.id
+                           and x.operation = 'expire' and x.finished_at > ${now} - make_interval(mins => $2))`,
+        [hostId, expireRetryMinutes],
+    );
+    for (const environment of expired)
+        await db.execute(
+            `insert into environment_operations (id, environment_id, operation, status, parameters, requested_at)
+             values ($1, $2, 'expire', 'requested', $3::text::jsonb, ${now}) on conflict do nothing`,
+            [
+                Bun.randomUUIDv7(),
+                environment.id,
+                JSON.stringify({
+                    tenant_slug: environment.tenant_slug,
+                    database: environment.database_name,
+                }),
+            ],
+        );
 }
 
 // Operasi tertua yang boleh diambil host ini, atau null: milik lingkungan yang sudah terikat ke host ini (didahulukan),
@@ -56,6 +95,7 @@ export async function claimOperation(
 ): Promise<ClaimedOperation | null> {
     return db.transaction(async () => {
         await expireStale(db);
+        await enqueueExpired(db, hostId);
         const claimed = await db.one(
             claimedSchema,
             `with next as (
@@ -88,18 +128,44 @@ export const stepSchema = z.strictObject({
 });
 export type Step = z.infer<typeof stepSchema>;
 
-// Status lingkungan sesudah operasinya ditutup, dan apakah penutupan sukses berarti skemanya baru dimigrasi.
-// Penyiapan dan migrate yang gagal meninggalkan lingkungan degraded supaya konsol tahu ada yang harus diperiksa.
-// Konversi yang gagal tidak: demo yang gagal dikonversi masih utuh dan sedang dipakai prospeknya, jadi tetap active,
-// termasuk bila tenggatnya habis.
+// Status lingkungan sesudah operasinya ditutup (null: tidak diubah), dan apakah penutupan sukses berarti skemanya baru
+// dimigrasi. Penyiapan dan migrate yang gagal meninggalkan lingkungan degraded supaya konsol tahu ada yang harus
+// diperiksa. Konversi dan expire yang gagal tidak mengubah apa pun: demonya masih utuh, dan yang gagal cukup operasinya.
+// Expire yang sukses menghapus lunak lingkungannya (softDelete), bukan sekadar mengganti status.
 const environmentAfter = {
     provision: { succeeded: 'active', failed: 'degraded', migrates: true },
     migrate: { succeeded: 'active', failed: 'degraded', migrates: true },
-    convert: { succeeded: 'active', failed: 'active', migrates: false },
+    convert: { succeeded: 'active', failed: null, migrates: false },
+    expire: { succeeded: null, failed: null, migrates: false },
 } as const satisfies Record<
     EnvironmentOperation,
-    { succeeded: string; failed: string; migrates: boolean }
+    { succeeded: string | null; failed: string | null; migrates: boolean }
 >;
+
+// Hapus lunak: status, deleted_at, dan purge_after dalam satu pernyataan, karena CHECK environments_hapus_berpasangan
+// dan environments_status_hapus_sejalan menolak ketiganya berubah sendiri-sendiri. Isi database lingkungan masih utuh
+// sampai purge_after; status sebelumnya disimpan di detail operasi supaya restore tidak perlu menebaknya.
+async function softDelete(
+    db: Database,
+    operationId: string,
+    environmentId: string,
+    graceDays: number,
+): Promise<void> {
+    const deleted = await db.one(
+        z.object({ previous_status: z.string(), purge_after: z.string() }),
+        `with previous as (select status from environments where id = $1 and deleted_at is null for update)
+         update environments e set status = 'soft_deleted', deleted_at = ${now},
+             purge_after = ${now} + make_interval(days => $2), updated_at = ${now}
+         from previous where e.id = $1
+         returning previous.status as previous_status, ${iso('e.purge_after')} as purge_after`,
+        [environmentId, graceDays],
+    );
+    if (deleted)
+        await db.execute(
+            'update environment_operations set detail = detail || $2::text::jsonb where id = $1',
+            [operationId, JSON.stringify(deleted)],
+        );
+}
 
 // Demo menjadi produksi: jenis, slug, sambungan keluar, dan tanggal berakhir dalam satu pernyataan, karena CHECK
 // environments_keluar_ikut_jenis menolak jenis dan sambungan keluar yang berubah sendiri-sendiri. Nama bawaan "Demo"
@@ -132,6 +198,7 @@ export async function recordStep(
     hostId: string,
     operationId: string,
     step: Step,
+    purgeGraceDays: number,
 ): Promise<{ lease_until: string | null } | null> {
     return db.transaction(async () => {
         const held = await db.one(
@@ -171,14 +238,23 @@ export async function recordStep(
             `update environment_operations set ${closing(status)}, step = $2, failure_message = $3 where id = $1`,
             [operationId, step.step, failure],
         );
-        await db.execute(
-            `update environments set status = $2, updated_at = ${now}${
-                status === 'succeeded' && after.migrates
-                    ? `, schema_migrated_at = ${now}`
-                    : ''
-            } where id = $1`,
-            [held.environment_id, after[status]],
-        );
+        if (held.operation === 'expire' && status === 'succeeded')
+            await softDelete(
+                db,
+                operationId,
+                held.environment_id,
+                purgeGraceDays,
+            );
+        const environmentStatus = after[status];
+        if (environmentStatus)
+            await db.execute(
+                `update environments set status = $2, updated_at = ${now}${
+                    status === 'succeeded' && after.migrates
+                        ? `, schema_migrated_at = ${now}`
+                        : ''
+                } where id = $1`,
+                [held.environment_id, environmentStatus],
+            );
         return { lease_until: null };
     });
 }
