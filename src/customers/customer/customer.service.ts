@@ -284,6 +284,7 @@ const operationNameSchema = z.enum([
     'convert',
     'expire',
     'restore',
+    'purge',
 ]);
 const operationStatusSchema = z.enum([
     'requested',
