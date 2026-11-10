@@ -2,6 +2,15 @@
     "semi": true,
     "singleQuote": true,
     "printWidth": 80,
+    "plugins": [
+        "prettier-plugin-tailwindcss"
+    ],
+    "tailwindFunctions": [
+        "clsx",
+        "cn",
+        "cva"
+    ],
+    "tailwindStylesheet": "src/platform/shell/app.css",
     "tabWidth": 4,
     "overrides": [
         {
