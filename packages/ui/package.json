@@ -1,0 +1,51 @@
+{
+    "name": "@control-plane-metta/ui",
+    "private": true,
+    "type": "module",
+    "sideEffects": [
+        "./src/styles.css"
+    ],
+    "exports": {
+        "./styles.css": "./src/styles.css",
+        "./theme": "./src/theme.ts",
+        "./utils": "./src/utils.ts",
+        "./record-search": "./src/components/record-search.ts",
+        "./use-incremental-list": "./src/components/use-incremental-list.ts",
+        "./use-inline-lookup-data": "./src/components/use-inline-lookup-data.ts",
+        "./use-record-navigation": "./src/components/use-record-navigation.ts",
+        "./*": "./src/components/*.tsx"
+    },
+    "dependencies": {
+        "@base-ui/react": "1.6.0",
+        "@fontsource-variable/geist": "5.3.0",
+        "@fontsource/poppins": "5.3.0",
+        "@shadcn/react": "0.2.1",
+        "class-variance-authority": "0.7.1",
+        "clsx": "2.1.1",
+        "cmdk": "1.1.1",
+        "embla-carousel-react": "8.6.0",
+        "input-otp": "1.4.2",
+        "lucide-react": "0.475.0",
+        "next-themes": "0.4.6",
+        "radix-ui": "1.6.2",
+        "react-day-picker": "10.0.1",
+        "react-hook-form": "7.81.0",
+        "react-resizable-panels": "4.12.2",
+        "recharts": "3.8.0",
+        "sonner": "2.0.7",
+        "tailwind-merge": "3.6.0",
+        "vaul": "1.1.2"
+    },
+    "peerDependencies": {
+        "react": "19.2.7",
+        "react-dom": "19.2.7"
+    },
+    "devDependencies": {
+        "@types/jsdom": "30.0.0",
+        "@types/react": "19.2.17",
+        "@types/react-dom": "19.2.3",
+        "jsdom": "30.1.3",
+        "react": "19.2.7",
+        "react-dom": "19.2.7"
+    }
+}

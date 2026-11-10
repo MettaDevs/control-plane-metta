@@ -5,13 +5,20 @@
         "moduleResolution": "Bundler",
         "lib": ["ES2024", "DOM", "DOM.Iterable"],
         "types": ["bun"],
+        "jsx": "react-jsx",
         "strict": true,
         "noUncheckedIndexedAccess": true,
         "noFallthroughCasesInSwitch": true,
         "noEmit": true,
         "skipLibCheck": true,
         "verbatimModuleSyntax": true,
-        "allowImportingTsExtensions": true
+        "allowImportingTsExtensions": true,
+        "resolveJsonModule": true
     },
-    "include": ["src/**/*.ts", "scripts/**/*.ts", "test/**/*.ts"]
+    "include": [
+        "src/**/*.ts",
+        "src/**/*.tsx",
+        "scripts/**/*.ts",
+        "test/**/*.ts"
+    ]
 }

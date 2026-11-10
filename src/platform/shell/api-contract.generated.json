@@ -1,0 +1,238 @@
+{
+    "up": {
+        "~orpc": {
+            "errorMap": {},
+            "meta": {},
+            "route": { "method": "GET", "path": "/up" }
+        }
+    },
+    "loginOptions": {
+        "~orpc": {
+            "errorMap": {},
+            "meta": {},
+            "route": { "method": "GET", "path": "/api/v1/login-options" }
+        }
+    },
+    "login": {
+        "~orpc": {
+            "errorMap": {},
+            "meta": {},
+            "route": {
+                "method": "POST",
+                "path": "/login",
+                "inputStructure": "detailed"
+            }
+        }
+    },
+    "logout": {
+        "~orpc": {
+            "errorMap": {},
+            "meta": {},
+            "route": {
+                "method": "POST",
+                "path": "/logout",
+                "successStatus": 204
+            }
+        }
+    },
+    "me": {
+        "~orpc": {
+            "errorMap": {},
+            "meta": {},
+            "route": { "method": "GET", "path": "/api/v1/me" }
+        }
+    },
+    "loginTwoFactor": {
+        "~orpc": {
+            "errorMap": {},
+            "meta": {},
+            "route": {
+                "method": "POST",
+                "path": "/login/two-factor",
+                "inputStructure": "detailed"
+            }
+        }
+    },
+    "startTwoFactor": {
+        "~orpc": {
+            "errorMap": {},
+            "meta": {},
+            "route": {
+                "method": "POST",
+                "path": "/api/v1/two-factor",
+                "inputStructure": "detailed"
+            }
+        }
+    },
+    "confirmTwoFactor": {
+        "~orpc": {
+            "errorMap": {},
+            "meta": {},
+            "route": {
+                "method": "POST",
+                "path": "/api/v1/two-factor/confirm",
+                "inputStructure": "detailed"
+            }
+        }
+    },
+    "disableTwoFactor": {
+        "~orpc": {
+            "errorMap": {},
+            "meta": {},
+            "route": {
+                "method": "DELETE",
+                "path": "/api/v1/two-factor",
+                "inputStructure": "detailed",
+                "successStatus": 204
+            }
+        }
+    },
+    "ssoStart": {
+        "~orpc": {
+            "errorMap": {},
+            "meta": {},
+            "route": {
+                "method": "GET",
+                "path": "/sso/start",
+                "outputStructure": "detailed"
+            }
+        }
+    },
+    "ssoCallback": {
+        "~orpc": {
+            "errorMap": {},
+            "meta": {},
+            "route": {
+                "method": "GET",
+                "path": "/sso/callback",
+                "inputStructure": "detailed",
+                "outputStructure": "detailed"
+            }
+        }
+    },
+    "ssoLink": {
+        "~orpc": {
+            "errorMap": {},
+            "meta": {},
+            "route": {
+                "method": "POST",
+                "path": "/api/v1/sso/link",
+                "inputStructure": "detailed"
+            }
+        }
+    },
+    "ssoUnlink": {
+        "~orpc": {
+            "errorMap": {},
+            "meta": {},
+            "route": {
+                "method": "DELETE",
+                "path": "/api/v1/sso/link",
+                "successStatus": 204
+            }
+        }
+    },
+    "ssoBackchannelLogout": {
+        "~orpc": {
+            "errorMap": {},
+            "meta": {},
+            "route": {
+                "method": "POST",
+                "path": "/sso/backchannel-logout",
+                "inputStructure": "detailed"
+            }
+        }
+    },
+    "listSites": {
+        "~orpc": {
+            "errorMap": {},
+            "meta": {},
+            "route": { "method": "GET", "path": "/api/v1/sites" }
+        }
+    },
+    "showSite": {
+        "~orpc": {
+            "errorMap": {},
+            "meta": {},
+            "route": {
+                "method": "GET",
+                "path": "/api/v1/sites/{site}",
+                "inputStructure": "detailed"
+            }
+        }
+    },
+    "issueEnrollmentToken": {
+        "~orpc": {
+            "errorMap": {},
+            "meta": {},
+            "route": {
+                "method": "POST",
+                "path": "/api/v1/sites/{site}/enrollment-tokens",
+                "inputStructure": "detailed",
+                "successStatus": 201
+            }
+        }
+    },
+    "requestOperation": {
+        "~orpc": {
+            "errorMap": {},
+            "meta": {},
+            "route": {
+                "method": "POST",
+                "path": "/api/v1/sites/{site}/operations",
+                "inputStructure": "detailed",
+                "successStatus": 201
+            }
+        }
+    },
+    "cancelOperation": {
+        "~orpc": {
+            "errorMap": {},
+            "meta": {},
+            "route": {
+                "method": "POST",
+                "path": "/api/v1/sites/{site}/operations/{operation}/cancel",
+                "inputStructure": "detailed",
+                "successStatus": 204
+            }
+        }
+    },
+    "revokeSite": {
+        "~orpc": {
+            "errorMap": {},
+            "meta": {},
+            "route": {
+                "method": "POST",
+                "path": "/api/v1/sites/{site}/revoke",
+                "inputStructure": "detailed",
+                "successStatus": 204
+            }
+        }
+    },
+    "listReleases": {
+        "~orpc": {
+            "errorMap": {},
+            "meta": {},
+            "route": { "method": "GET", "path": "/api/v1/releases" }
+        }
+    },
+    "listCustomers": {
+        "~orpc": {
+            "errorMap": {},
+            "meta": {},
+            "route": { "method": "GET", "path": "/api/v1/customers" }
+        }
+    },
+    "createCustomer": {
+        "~orpc": {
+            "errorMap": {},
+            "meta": {},
+            "route": {
+                "method": "POST",
+                "path": "/api/v1/customers",
+                "inputStructure": "detailed",
+                "successStatus": 201
+            }
+        }
+    }
+}

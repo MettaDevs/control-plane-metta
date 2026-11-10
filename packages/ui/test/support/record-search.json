@@ -1,0 +1,304 @@
+[
+    {
+        "name": "empty query",
+        "query": "",
+        "fields": ["Surya Jaya"],
+        "matches": true
+    },
+    {
+        "name": "whitespace query",
+        "query": "  ",
+        "fields": ["Surya Jaya"],
+        "matches": true
+    },
+    {
+        "name": "punctuation only",
+        "query": "%_*",
+        "fields": ["Surya Jaya"],
+        "matches": false
+    },
+    {
+        "name": "empty quotes",
+        "query": "\"\"",
+        "fields": ["Surya Jaya"],
+        "matches": false
+    },
+    {
+        "name": "word prefix",
+        "query": "sur",
+        "fields": ["Surya Jaya"],
+        "matches": true
+    },
+    {
+        "name": "middle fragment excluded",
+        "query": "urya",
+        "fields": ["Surya Jaya"],
+        "matches": false
+    },
+    {
+        "name": "multiple prefixes",
+        "query": "sur ja",
+        "fields": ["Surya Jaya Abadi"],
+        "matches": true
+    },
+    {
+        "name": "reordered words",
+        "query": "jaya surya",
+        "fields": ["Surya Jaya Abadi"],
+        "matches": true
+    },
+    {
+        "name": "all terms required",
+        "query": "sur missing",
+        "fields": ["Surya Jaya"],
+        "matches": false
+    },
+    {
+        "name": "whitespace terms cross fields",
+        "query": "sur ja",
+        "fields": ["Surya", "Jaya"],
+        "matches": true
+    },
+    {
+        "name": "punctuated chunk stays in one field",
+        "query": "sur-ja",
+        "fields": ["Surya", "Jaya"],
+        "matches": false
+    },
+    {
+        "name": "punctuated chunk same field",
+        "query": "sur-ja",
+        "fields": ["Surya Jaya"],
+        "matches": true
+    },
+    {
+        "name": "quoted phrase ordered",
+        "query": "\"surya jaya\"",
+        "fields": ["PT Surya Jaya Abadi"],
+        "matches": true
+    },
+    {
+        "name": "quoted phrase no reorder",
+        "query": "\"jaya surya\"",
+        "fields": ["Surya Jaya"],
+        "matches": false
+    },
+    {
+        "name": "quoted phrase no skipped word",
+        "query": "\"surya jaya\"",
+        "fields": ["Surya Utama Jaya"],
+        "matches": false
+    },
+    {
+        "name": "quoted phrase words complete",
+        "query": "\"surya ja\"",
+        "fields": ["Surya Jaya"],
+        "matches": false
+    },
+    {
+        "name": "quoted phrase cannot cross fields",
+        "query": "\"surya jaya\"",
+        "fields": ["Surya", "Jaya"],
+        "matches": false
+    },
+    {
+        "name": "unclosed quote tolerant",
+        "query": "\"sur ja",
+        "fields": ["Surya Jaya"],
+        "matches": true
+    },
+    {
+        "name": "case ignored",
+        "query": "SUR JA",
+        "fields": ["surya jaya"],
+        "matches": true
+    },
+    {
+        "name": "accent retained",
+        "query": "cafe",
+        "fields": ["Café Sentosa"],
+        "matches": false
+    },
+    {
+        "name": "accent prefix",
+        "query": "CAFÉ",
+        "fields": ["Café Sentosa"],
+        "matches": true
+    },
+    {
+        "name": "canonical Unicode",
+        "query": "Café",
+        "fields": ["Café Sentosa"],
+        "matches": true
+    },
+    {
+        "name": "apostrophe words",
+        "query": "o neil",
+        "fields": ["O'Neil Supplies"],
+        "matches": true
+    },
+    {
+        "name": "numeric minus segment",
+        "query": "000001",
+        "fields": [
+            {
+                "text": "VND-000001",
+                "identifier": true
+            }
+        ],
+        "matches": true
+    },
+    {
+        "name": "identifier compact query",
+        "query": "vnd000001",
+        "fields": [
+            {
+                "text": "VND-000001",
+                "identifier": true
+            }
+        ],
+        "matches": true
+    },
+    {
+        "name": "identifier compact stored",
+        "query": "vnd 000001",
+        "fields": [
+            {
+                "text": "VND000001",
+                "identifier": true
+            }
+        ],
+        "matches": true
+    },
+    {
+        "name": "identifier punctuation query",
+        "query": "vnd-000001",
+        "fields": [
+            {
+                "text": "VND000001",
+                "identifier": true
+            }
+        ],
+        "matches": true
+    },
+    {
+        "name": "tax compact",
+        "query": "123456789012345",
+        "fields": [
+            {
+                "text": "12.345.678.9-012.345",
+                "identifier": true
+            }
+        ],
+        "matches": true
+    },
+    {
+        "name": "tax spaced query",
+        "query": "12 345 678",
+        "fields": [
+            {
+                "text": "123456789012345",
+                "identifier": true
+            }
+        ],
+        "matches": true
+    },
+    {
+        "name": "quoted identifier exact compact",
+        "query": "\"vnd 000001\"",
+        "fields": [
+            {
+                "text": "VND000001",
+                "identifier": true
+            }
+        ],
+        "matches": true
+    },
+    {
+        "name": "quoted identifier no partial compact",
+        "query": "\"vnd 000\"",
+        "fields": [
+            {
+                "text": "VND000001",
+                "identifier": true
+            }
+        ],
+        "matches": false
+    },
+    {
+        "name": "normal text not compacted",
+        "query": "suryajaya",
+        "fields": ["Surya Jaya"],
+        "matches": false
+    },
+    {
+        "name": "no typo correction",
+        "query": "zurya",
+        "fields": ["Surya Jaya"],
+        "matches": false
+    },
+    {
+        "name": "operator is plain punctuation",
+        "query": "sur | missing",
+        "fields": ["Surya Jaya"],
+        "matches": false
+    },
+    {
+        "name": "repeated phrase requires repeated word",
+        "query": "\"jaya jaya\"",
+        "fields": ["Jaya"],
+        "matches": false
+    },
+    {
+        "name": "repeated phrase matches repeated word",
+        "query": "\"jaya jaya\"",
+        "fields": ["Jaya Jaya"],
+        "matches": true
+    },
+    {
+        "name": "Unicode nonbreaking space separates terms",
+        "query": "sur ja",
+        "fields": ["Surya", "Jaya"],
+        "matches": true
+    },
+    {
+        "name": "Unicode BOM separates terms",
+        "query": "sur﻿ja",
+        "fields": ["Surya", "Jaya"],
+        "matches": true
+    },
+    {
+        "name": "Unicode field whitespace preserves phrase",
+        "query": "\"surya jaya\"",
+        "fields": ["Surya Jaya"],
+        "matches": true
+    },
+    {
+        "name": "canonical Unicode field",
+        "query": "Café",
+        "fields": ["Café Sentosa"],
+        "matches": true
+    },
+    {
+        "name": "identifier Unicode query spaces",
+        "query": "vnd 000001",
+        "fields": [
+            {
+                "text": "VND000001",
+                "identifier": true
+            }
+        ],
+        "matches": true
+    },
+    {
+        "name": "identifier Unicode stored spaces",
+        "query": "vnd000001",
+        "fields": [
+            {
+                "text": "VND 000001",
+                "identifier": true
+            }
+        ],
+        "matches": true
+    }
+]

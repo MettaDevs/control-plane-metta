@@ -7,11 +7,18 @@ import { HttpFailure } from '../../platform/http/index.ts';
 // Label yang dipakai layanan lain di domain yang sama; aturan alamat operations-metta menolaknya sebagai tenant.
 const reservedLabels = new Set(['admin', 'www', 'api', 'registry']);
 
+// Pesan di sini tampil di layar customer baru, di bawah field asalnya.
+const required = (message: string) => ({ error: message });
+
 export const customerInputSchema = z.object({
-    legal_name: z.string().trim().min(1).max(255),
+    legal_name: z
+        .string(required('Isi nama badan usaha.'))
+        .trim()
+        .min(1, 'Isi nama badan usaha.')
+        .max(255, 'Nama badan usaha paling panjang 255 karakter.'),
     // Menjadi alamat `<slug>.<base>`, jadi bentuknya label DNS, dan tidak pernah dipakai ulang.
     slug: z
-        .string()
+        .string(required('Isi slug.'))
         .regex(
             /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/,
             'Slug berisi huruf kecil, angka, dan tanda hubung, paling panjang 63.',
@@ -20,24 +27,50 @@ export const customerInputSchema = z.object({
             (slug) => !reservedLabels.has(slug),
             'Slug ini dipakai layanan lain.',
         ),
-    admin: z.object({
-        name: z.string().trim().min(1).max(255),
-        email: z.email().max(255).toLowerCase(),
-    }),
-    environment: z.discriminatedUnion('kind', [
-        z.object({
-            kind: z.literal('production'),
-            name: z.string().trim().min(1).max(100).default('Produksi'),
-        }),
-        // Lama trial tidak ditulis mati: operator menentukan kapan demo berakhir.
-        z.object({
-            kind: z.literal('demo'),
-            name: z.string().trim().min(1).max(100).default('Demo'),
-            expires_at: z.iso.date(),
-        }),
-    ]),
+    admin: z.object(
+        {
+            name: z
+                .string(required('Isi nama admin.'))
+                .trim()
+                .min(1, 'Isi nama admin.')
+                .max(255, 'Nama admin paling panjang 255 karakter.'),
+            email: z
+                .email('Isi alamat email yang benar.')
+                .max(255, 'Email paling panjang 255 karakter.')
+                .toLowerCase(),
+        },
+        required('Isi data admin pertama.'),
+    ),
+    environment: z.discriminatedUnion(
+        'kind',
+        [
+            z.object({
+                kind: z.literal('production'),
+                name: z.string().trim().min(1).max(100).default('Produksi'),
+            }),
+            // Lama trial tidak ditulis mati: operator menentukan kapan demo berakhir.
+            z.object({
+                kind: z.literal('demo'),
+                name: z.string().trim().min(1).max(100).default('Demo'),
+                expires_at: z.iso.date('Isi tanggal berakhir demo.'),
+            }),
+        ],
+        required('Pilih lingkungan pertama: produksi atau demo.'),
+    ),
 });
 export type CustomerInput = z.infer<typeof customerInputSchema>;
+
+// Kesalahan isian per field, dengan nama field bertitik seperti `admin.email`, untuk jawaban 422.
+export function customerInputErrors(
+    error: z.ZodError,
+): Record<string, string[]> {
+    const errors: Record<string, string[]> = {};
+    for (const issue of error.issues) {
+        const field = issue.path.join('.') || '_form';
+        (errors[field] ??= []).push(issue.message);
+    }
+    return errors;
+}
 
 export type CreatedCustomer = {
     client_id: string;
@@ -243,15 +276,27 @@ const customerRowSchema = z.object({
     environments: z.array(
         z.object({
             id: z.string(),
-            kind: z.string(),
+            kind: z.enum(['production', 'sandbox', 'demo']),
             name: z.string(),
-            status: z.string(),
+            status: z.enum([
+                'provisioning',
+                'copying',
+                'active',
+                'maintenance',
+                'degraded',
+                'suspended',
+            ]),
             expires_at: z.string().nullable(),
             operation: z
                 .object({
                     id: z.string(),
-                    operation: z.string(),
-                    status: z.string(),
+                    operation: z.enum(['provision']),
+                    status: z.enum([
+                        'requested',
+                        'running',
+                        'succeeded',
+                        'failed',
+                    ]),
                     step: z.string().nullable(),
                     failure_message: z.string().nullable(),
                 })

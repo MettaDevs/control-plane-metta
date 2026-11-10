@@ -1,7 +1,7 @@
 # control-plane-metta
 
 - Repo ini adalah control plane kami untuk onboarding, trial gratis 30 hari Praktik Dokter, tenant, lingkungan, rilis, dan agen server. Di dalamnya akan ada konsol operator internal dan, menyusul kemudian, portal customer. Keduanya di-deploy terpisah.
-- Yang sudah ada baru fondasinya: proses konsol dengan login operator, proses agen yang baru menjawab `/up`, skema awal tabel pusat, dan pemeriksaan batas. Belum ada alur bisnis yang pindah.
+- Yang sudah ada baru fondasinya: proses konsol dengan login operator dan layar pertamanya (login, daftar customer, customer baru), proses agen, skema awal tabel pusat, dan pemeriksaan batas.
 - Runtime yang dijalankan untuk klinik, yaitu ERP dan Praktik Dokter, milik repo [operations-metta](https://github.com/MettaDevs/operations-metta).
 - Untuk alur yang sudah ada di konsol operator CoreERP (`apps/control-plane`, alamatnya admin.erp), CoreERP tetap acuan perilaku sampai alur itu selesai dipindah. Aturan konsol itu ada di skill [`control-plane-metta-console`](.agents/skills/control-plane-metta-console/SKILL.md), [`docs/dev/31-admin-erp-control-plane.md`](https://github.com/MettaDevs/coreERP/blob/main/docs/dev/31-admin-erp-control-plane.md), dan [`docs/dev/32-sso.md`](https://github.com/MettaDevs/coreERP/blob/main/docs/dev/32-sso.md).
 - Jaga perubahan dan dependency tetap minimal. Jangan membuat abstraksi atau compatibility layer spekulatif. Kalau ada yang membingungkan, tanyakan langsung ke pemilik produk dan berhenti dulu sampai konteksnya jelas.
@@ -34,7 +34,7 @@ Repo ini tumbuh dengan menambah folder dan berkas di tempat yang sudah ditetapka
 - Folder test mengikuti folder kode yang diujinya, jadi test sebuah berkas dicari di path yang sama di bawah `test/`. Test yang menguji beberapa bagian sekaligus, misalnya kedua proses, ada di folder bagian yang paling atas, misalnya `test/processes.test.ts`. Penyedia tiruan dan pembuat aplikasi test ada di `test/support/`.
 - Test memanggil kode lewat pintunya (`index.ts`, `index.<pemanggil>.ts`) bila yang diuji perilaku yang dilihat pemanggil, dan langsung ke berkasnya bila yang diuji bagian dalam, misalnya TOTP atau tanda tangan cookie.
 - Route ditulis sebagai procedure oRPC, bukan controller Elysia. Elysia hanya server HTTP: satu route `app.all('*')` yang meneruskan request ke handler OpenAPI oRPC, karena hanya bentuk itu yang diukur di [`docs/dev/39-pindah-ke-bun-elysia.md`](https://github.com/MettaDevs/coreERP/blob/main/docs/dev/39-pindah-ke-bun-elysia.md). Ini sengaja menyimpang dari [best practice Elysia](https://elysiajs.com/essential/best-practice.html) yang menjadikan satu instance Elysia sebagai satu controller. Yang tetap diikuti dari halaman itu: satu folder per fitur, schema sebagai satu-satunya sumber tipe dan validasi (`z.infer`, tanpa `interface` kembaran), dan service yang menerima nilai yang ia butuhkan (misalnya `db`), bukan seluruh context request.
-- Framework UI boleh dipilih belakangan. Tempat layar tidak berubah karena pilihan itu.
+- Layar konsol adalah SPA React dengan TanStack Router dan TanStack Query di atas API oRPC, sama dengan operations-metta. Aturannya di bagian [Layar](#layar).
 - `bun run check:boundaries` menolak impor yang melewati pintu sebuah kemampuan atau area, berkas satu pemanggil yang meng-import berkas pemanggil lain, proses yang memuat berkas pemanggil lain di mana pun di rantai impornya, proses tanpa pemanggil (misalnya `worker.ts`) yang memuat route, kode selain test yang meng-import berkas proses, test di luar `test/`, folder test yang tidak punya pasangan di `src/` atau `scripts/`, dan kode di `src/` atau `scripts/` yang meng-import `test/`.
 
 ## Konsol dan portal
@@ -56,6 +56,31 @@ Repo ini tumbuh dengan menambah folder dan berkas di tempat yang sudah ditetapka
   - `POST /sso/backchannel-logout` menerima logout token dari penyedia dan mengakhiri semua sesi operator yang tertaut ke `sub`-nya. `jti` yang sama ditolak selama token itu masih bisa diterima.
 - Login yang gagal dibatasi lima kali per menit untuk setiap pasangan email dan alamat IP. Kode 2FA dan konfirmasi password dibatasi dengan cara yang sama, per operator dan alamat IP. Hitungannya ada di tabel `rate_limits`, jadi berlaku sama di semua proses.
 - Jejak audit ditulis dengan `recordAudit()` dari `src/platform/audit/`. Fungsi itu menolak berjalan di luar transaksi, supaya baris audit selalu ikut transaksi perubahannya.
+
+## Layar
+
+Keputusan pemilik produk, 10 November 2026: layar konsol memakai susunan yang sama dengan layar operations-metta, yaitu SPA dengan TanStack Router dan TanStack Query di atas API oRPC, bukan Inertia. Server tidak merender halaman. Ia menyajikan satu dokumen yang sama untuk setiap URL layar, dan layar mengambil datanya sendiri dari `/api/`.
+
+- **Hanya proses konsol yang menyajikan layar.** `src/console.ts` memberi `clientBuild(CLIENT_DIR)` ke `serve()`; proses agen tidak, jadi URL layar di sana dijawab 404 JSON seperti alamat lain.
+- **URL layar dan URL data terpisah.** Data hanya di bawah `/api/`. URL lain milik layar, misalnya `/customers` dan `/customers/new`. Pengecualiannya alamat yang dijawab server: `GET /up`, `/sso/...` untuk upacara SSO, serta `POST /login`, `POST /login/two-factor`, dan `POST /logout`.
+  - `src/platform/http/spa.ts` memeriksa dua hal sebelum database disentuh. `GET /build/<berkas>` mendapat berkas build ber-hash yang tercatat di manifest, dengan cache `immutable`. GET lain di luar alamat server mendapat dokumen layar.
+  - Selain dua hal itu, semuanya diteruskan ke oRPC. Permintaan `/api/...` tidak pernah mendapat dokumen layar, dan 404-nya tetap JSON.
+  - Procedure baru yang dibaca layar ditulis di bawah `/api/v1/...`. GET oRPC di luar `/api/` tertutup dokumen layar, kecuali ditambahkan ke `isServerPath()`.
+- **Halaman** adalah berkas `<fitur>.console.page.tsx` di folder fiturnya, yang meng-export `page` dari `definePage({ path, layout, title, validateSearch?, component })`.
+  - `path` adalah URL layar dan ditulis sebagai teks literal. Nama dan folder berkas tidak menentukan URL.
+  - `layout: 'app'` memasang halaman di dalam bingkai konsol dan mewajibkan login. `'auth'` dipakai untuk halaman sebelum login.
+  - Id route adalah id layout ditambah path, misalnya `/_app/customers` atau `/_auth/login`. `Link`, `navigate`, dan `redirect` memakai path, dan TypeScript menolak path yang tidak ada.
+  - Komponen halaman dan layout menulis tipe kembaliannya (`(): ReactNode`), supaya tipe route tree tidak hilang diam-diam.
+- **Route tree dirakit otomatis.** `scripts/generate-client.ts` membaca setiap `.page.tsx` di `src/`, lalu menulis `src/client.tsx` (entry peramban beserta route tree-nya) dan `src/platform/shell/api-contract.generated.json` (bentuk route oRPC konsol untuk klien di peramban). Keduanya di-commit dan tidak pernah disunting tangan. `bun run build` dan `bun run dev` menulisnya ulang, dan `bun run check:generated` menolak berkas yang tertinggal.
+- **Data.** Halaman memanggil API lewat `api` (klien oRPC) dan `orpc` (TanStack Query) dari `src/platform/shell/index.ts`. Tipe input dan output datang dari router di `src/console.ts`, jadi tidak ditulis ulang di layar. Body yang diperiksa handler, bukan oRPC, diberi tipe lewat `z.custom<...>()`, supaya pesan 422 per field-nya tetap milik service. Kegagalan API menjadi `ApiError`, berisi status, pesan, error per field, dan kodenya.
+- **Sesi.** Layar memakai cookie sesi konsol yang sudah ada. Klien mengirim setiap perubahan sebagai JSON, termasuk yang tanpa body, karena konsol menolak yang lain. Data halaman yang dijawab 401 membawa operator ke `/login?redirect=<asal>`; simpan yang gagal karena sesi habis menampilkan pesan, dan isian form tetap ada.
+- **Kode peramban dan kode server tidak bercampur.** Kode peramban adalah `src/client.tsx`, `src/platform/shell/`, dan setiap berkas `.tsx`. Ia hanya mengambil tipe dari kode server (`import type`), dan kode server tidak meng-import-nya. Hanya `src/client.tsx` yang meng-import halaman. `check:boundaries` menjaga ketiganya.
+- **Paket UI** `packages/ui` (`@control-plane-metta/ui`) disalin dari `@operations-metta/ui` sebagai titik awal dan berkembang sendiri di repo ini. Tidak ada skrip penyelaras dan tidak ada ketergantungan pada operations-metta.
+- **Build.** `bun run build` membundel proses server ke `dist/` dan `src/client.tsx` beserta `src/platform/shell/app.css` ke `dist/client/` dengan nama `<nama>-<hash>.<ext>`, lalu menulis `dist/client/manifest.json`. Tailwind v4 dijalankan lewat `@tailwindcss/node` dan `@tailwindcss/oxide`; font `@fontsource` ditulis sebagai berkas sendiri.
+
+### Menjalankan layar di laptop
+
+Butuh database yang sudah dimigrasi, `APP_KEY` (32 byte, `base64:...`), dan satu operator dari `bun src/cli.ts create-operator`. Tanpa HTTPS, isi `SESSION_SECURE_COOKIE=false` supaya peramban menyimpan cookie sesi. Lalu `bun run dev`: proses konsol berjalan dengan `bun --watch`, dan build peramban diulang setiap kali berkas di `src/` atau `packages/ui/src/` berubah. Muat ulang halaman untuk melihat hasilnya.
 
 ## Aturan konsol, agen, dan rilis
 
@@ -156,15 +181,16 @@ Keputusan pemilik produk, 9 November 2026: worktree tidak dibuat di folder kerja
 
 ## Sebelum menyatakan hijau
 
-Jalankan dari akar repo. Keempat pemeriksaan ini wajib lulus untuk setiap perubahan:
+Jalankan dari akar repo. Kelima pemeriksaan ini wajib lulus untuk setiap perubahan:
 
 ```bash
 bun run typecheck
 bun test
 bun run format:check
 bun run check:boundaries
+bun run check:generated
 ```
 
 Test yang membutuhkan database dilewati bila `DB_HOST` kosong. CI selalu menjalankannya terhadap database yang sudah dimigrasi. Sebelum menyatakan perubahan yang menyentuh SQL hijau, jalankan juga test itu terhadap database kosong yang sudah dimigrasi, dengan `DB_*` mengarah ke sana.
 
-`bun run build` hanya perlu dijalankan bila perubahan menyentuh hasil build: `package.json`, `bun.lock`, `tsconfig.json`, `Dockerfile`, atau berkas proses di akar `src/`. CI tetap menjalankannya di setiap PR, bersama `bun run migrate` atas database kosong dua kali: sekali untuk menerapkan, sekali untuk memastikan tidak ada yang tersisa.
+`bun run build` hanya perlu dijalankan bila perubahan menyentuh hasil build: `package.json`, `bun.lock`, `tsconfig.json`, `Dockerfile`, berkas proses di akar `src/`, layar (`.tsx`, `src/platform/shell/`), atau `packages/`. CI tetap menjalankannya di setiap PR, bersama `bun run migrate` atas database kosong dua kali: sekali untuk menerapkan, sekali untuk memastikan tidak ada yang tersisa.

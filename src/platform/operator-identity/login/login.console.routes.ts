@@ -20,6 +20,10 @@ export function loginRoutes(config: Config, session: ConsoleSession) {
         session;
 
     return {
+        // Dibaca layar login sebelum ada sesi: tombol SSO hanya tampil bila CONSOLE_SSO_* diisi.
+        loginOptions: consoleBase
+            .route({ method: 'GET', path: '/api/v1/login-options' })
+            .handler(() => ({ sso: config.sso !== null })),
         login: consoleBase
             .route({
                 method: 'POST',

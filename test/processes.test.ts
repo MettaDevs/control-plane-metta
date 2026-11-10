@@ -36,3 +36,20 @@ describe.each([
         expect(response.status).toBe(404);
     });
 });
+
+// Proses agen tidak membawa build peramban: URL layar dan berkas build dijawab 404 JSON seperti alamat lain, walau
+// folder build ada di sebelahnya.
+test('the agent process does not serve screens', async () => {
+    const application = createApplication(config, agentRouter(config));
+    for (const path of ['/', '/login', '/customers', '/build/client.js']) {
+        const response = await application.handle(
+            new Request(`http://localhost${path}`, {
+                headers: { accept: 'text/html' },
+            }),
+        );
+        expect(response.status).toBe(404);
+        expect(response.headers.get('content-type')).toContain(
+            'application/json',
+        );
+    }
+});

@@ -136,4 +136,77 @@ describe('check-boundaries', () => {
             'src/sites/site/site.service.ts imports test/support/provider.ts; code under src/ and scripts/ must not import test/.',
         );
     });
+
+    const screens = {
+        ...sites,
+        'src/console.ts': `import './sites/index.console.ts'; export const router = 1;`,
+        'src/client.tsx': `import './sites/site/site.console.page.tsx'; import './platform/shell/index.ts';`,
+        'src/platform/shell/index.ts': `export * from './api.ts';`,
+        'src/platform/shell/api.ts': `import type { router } from '../../console.ts';`,
+        'src/sites/site/site.console.page.tsx': `import '../../platform/shell/index.ts';`,
+    };
+
+    test('accepts the browser entry loading pages and the shell taking only types from the server', () => {
+        const result = check(screens);
+        expect(result.output).toBe('');
+        expect(result.code).toBe(0);
+    });
+
+    test('rejects pages imported outside the browser entry, and browser and server code mixing', () => {
+        const result = check({
+            ...screens,
+            'src/platform/shell/api.ts': `import { router } from '../../console.ts';`,
+            'src/sites/site/site.console.page.tsx': `import './site.service.ts'; import './other.console.page.tsx';`,
+            'src/sites/site/other.console.page.tsx': `export {};`,
+            'src/sites/site/site.service.ts': `import '../../platform/shell/index.ts';`,
+        });
+        expect(result.code).toBe(1);
+        expect(result.output).toContain(
+            'src/platform/shell/api.ts:1 imports src/console.ts; only tests may import a process file.',
+        );
+        expect(result.output).toContain(
+            'src/sites/site/site.console.page.tsx:1 imports src/sites/site/site.service.ts; browser code takes only types from server code (import type).',
+        );
+        expect(result.output).toContain(
+            'src/sites/site/site.console.page.tsx:1 imports src/sites/site/other.console.page.tsx; only src/client.tsx imports pages',
+        );
+        expect(result.output).toContain(
+            'src/sites/site/site.service.ts:1 imports src/platform/shell/index.ts; server code must not import browser code.',
+        );
+    });
+
+    test('rejects agent pages reaching the console browser entry', () => {
+        const result = check({
+            ...screens,
+            'src/client.tsx': `import './sites/site/site.agent.page.tsx';`,
+            'src/sites/site/site.agent.page.tsx': `export {};`,
+        });
+        expect(result.code).toBe(1);
+        expect(result.output).toContain(
+            'src/client.tsx loads src/sites/site/site.agent.page.tsx; the console process loads only console files.',
+        );
+    });
+
+    test('rejects a package importing src/ or keeping tests outside its test/', () => {
+        const result = check({
+            ...sites,
+            'packages/ui/src/components/button.tsx': `import '../../../../src/sites/index.ts';`,
+            'packages/ui/src/components/button.test.ts': `export {};`,
+            'packages/ui/test/widgets/widget.test.ts': `export {};`,
+            'packages/ui/test/components/button.test.ts': `export {};`,
+        });
+        expect(result.code).toBe(1);
+        expect(result.output).toContain(
+            'packages/ui/src/components/button.tsx:1 imports src/sites/index.ts; packages/ must not import src/ or test/.',
+        );
+        expect(result.output).toContain(
+            "packages/ui/src/components/button.test.ts; a package's tests live under its test/",
+        );
+        expect(result.output).toContain(
+            'packages/ui/test/widgets/widget.test.ts; packages/ui/test/widgets mirrors no folder of packages/ui/src.',
+        );
+        expect(result.output).not.toContain(
+            'packages/ui/test/components/button.test.ts;',
+        );
+    });
 });

@@ -222,4 +222,43 @@ describe.skipIf(!process.env.DB_HOST)('customer console', () => {
         );
         expect(count?.count).toBe(0);
     });
+
+    test('isian yang salah dijawab 422 dengan pesan per field untuk layar', async () => {
+        const reserved = await create(body('admin', { kind: 'production' }));
+        expect(reserved.status).toBe(422);
+        expect(await reserved.json()).toEqual({
+            message: 'Periksa isian customer baru.',
+            errors: { slug: ['Slug ini dipakai layanan lain.'] },
+        });
+
+        const empty = await create({
+            legal_name: ' ',
+            slug: 'Bukan Slug',
+            admin: { name: '', email: 'bukan-email' },
+            environment: { kind: 'demo' },
+        });
+        expect(empty.status).toBe(422);
+        const { errors } = z
+            .object({ errors: z.record(z.string(), z.array(z.string())) })
+            .parse(await empty.json());
+        expect(errors).toEqual({
+            legal_name: ['Isi nama badan usaha.'],
+            slug: [
+                'Slug berisi huruf kecil, angka, dan tanda hubung, paling panjang 63.',
+            ],
+            'admin.name': ['Isi nama admin.'],
+            'admin.email': ['Isi alamat email yang benar.'],
+            'environment.expires_at': ['Isi tanggal berakhir demo.'],
+        });
+
+        const nothing = await create({});
+        expect(nothing.status).toBe(422);
+        expect(
+            Object.keys(
+                z
+                    .object({ errors: z.record(z.string(), z.unknown()) })
+                    .parse(await nothing.json()).errors,
+            ).sort(),
+        ).toEqual(['admin', 'environment', 'legal_name', 'slug']);
+    });
 });

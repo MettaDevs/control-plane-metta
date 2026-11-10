@@ -1,0 +1,21 @@
+@import 'tailwindcss' source(none);
+@import 'tw-animate-css';
+@import '@control-plane-metta/ui/styles.css';
+
+/*
+ * `source(none)` mematikan pemindaian otomatis Tailwind, jadi setiap folder yang memakai kelas Tailwind
+ * disebut di sini. Tanpa baris yang tepat build tetap hijau dan CSS keluarannya kehilangan setiap kelas
+ * yang hanya dipakai folder itu, kegagalan yang baru terlihat sebagai layar yang tata letaknya berantakan.
+ *
+ * Paket UI ditulis langsung ke folder sumbernya, bukan lewat tautan di `node_modules`: satu deklarasi yang
+ * menunjuk berkas sungguhan, dan tidak bergantung pada apakah pemindai Tailwind mau menembus tautan
+ * simbolik.
+ */
+@source '../../../packages/ui/src';
+
+/*
+ * Layar konsol: bingkai layar di folder ini, `.page.tsx` di folder fitur, dan komponen pendampingnya.
+ */
+@source '../../**/*.tsx';
+
+@custom-variant dark (&:is(.dark *));

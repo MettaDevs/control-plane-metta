@@ -2,15 +2,21 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import ts from 'typescript';
 
-// Batas yang dijaga, sesuai bagian Susunan repo di AGENTS.md:
+// Batas yang dijaga, sesuai bagian Susunan repo dan Layar di AGENTS.md:
 //   1. Dari luar sebuah kemampuan (src/platform/<x>/) atau area (src/<area>/), impor hanya pintunya: index.ts, atau
-//      index.<audiens>.ts untuk route satu audiens.
+//      index.<audiens>.ts untuk route satu audiens. Pengecualiannya src/client.tsx, yang meng-import setiap halaman.
 //   2. Berkas satu audiens tidak meng-import berkas audiens lain.
 //   3. Proses di akar src/ hanya memuat berkas audiensnya sendiri, dihitung atas seluruh rantai impornya, supaya
-//      rute konsol tidak pernah ada di proses agen atau portal walaupun lewat perantara.
-//   4. Hanya test yang meng-import berkas proses.
+//      rute konsol tidak pernah ada di proses agen atau portal walaupun lewat perantara. src/client.tsx adalah entry
+//      peramban layar konsol, jadi ia dihitung sebagai proses konsol.
+//   4. Hanya test yang meng-import berkas proses. Kode peramban boleh meng-import tipenya (`import type`).
 //   5. Test hanya ada di test/, di folder yang sama dengan letak kode yang diujinya di src/ atau scripts/. Bantuan test
-//      ada di test/support/. Kode di src/ dan scripts/ tidak meng-import apa pun dari test/.
+//      ada di test/support/. Kode di src/ dan scripts/ tidak meng-import apa pun dari test/. Test sebuah package ada
+//      di test/ package itu, mengikuti folder src/-nya.
+//   6. Kode peramban (src/client.tsx, src/platform/shell/, dan setiap .tsx) dan kode server tidak saling meng-import.
+//      Kode peramban hanya boleh mengambil tipe dari kode server, yang hilang saat dibundel.
+//   7. Hanya src/client.tsx yang meng-import halaman (.page.tsx).
+//   8. Package di packages/ tidak meng-import src/.
 const audiences = ['console', 'agent', 'portal'] as const;
 type Audience = (typeof audiences)[number];
 
@@ -18,12 +24,16 @@ const root = resolve(process.argv[2] ?? join(import.meta.dir, '..'));
 const src = join(root, 'src');
 const scripts = join(root, 'scripts');
 const tests = join(root, 'test');
+const packages = join(root, 'packages');
 const support = join(tests, 'support') + sep;
+const shell = join(src, 'platform', 'shell') + sep;
+const clientEntry = join(src, 'client.tsx');
 const extension = /\.(ts|tsx|js|mjs|cjs)$/;
 
 function files(directory: string): string[] {
     if (!existsSync(directory)) return [];
     return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+        if (entry.name === 'node_modules') return [];
         const path = join(directory, entry.name);
         if (entry.isDirectory()) return files(path);
         return extension.test(entry.name) ? [path] : [];
@@ -34,6 +44,9 @@ const roles = (path: string) =>
     basename(path).replace(extension, '').split('.').slice(1);
 const isTest = (path: string) => roles(path).includes('test');
 const isProcess = (path: string) => dirname(path) === src && !isTest(path);
+const isPage = (path: string) => path.endsWith('.page.tsx');
+const isBrowser = (path: string) =>
+    path === clientEntry || path.startsWith(shell) || path.endsWith('.tsx');
 
 // Nama fitur dibuang lebih dulu, jadi fitur bernama `agent` tetap dibaca dari perannya.
 function audienceOf(path: string): Audience | null {
@@ -41,6 +54,7 @@ function audienceOf(path: string): Audience | null {
 }
 
 function processAudience(path: string): Audience | null {
+    if (path === clientEntry) return 'console';
     const name = basename(path).replace(extension, '');
     return audiences.find((audience) => audience === name) ?? null;
 }
@@ -67,8 +81,53 @@ function resolveImport(file: string, specifier: string): string | null {
 
 const shown = (path: string) => relative(root, path).replaceAll(sep, '/');
 
+type Import = { path: string; line: number; typeOnly: boolean };
+
+// Setiap impor berkas lokal beserta barisnya. `import type` dan `export type ... from` ditandai, karena keduanya
+// hilang saat dibundel.
+function importsOf(file: string): Import[] {
+    const text = readFileSync(file, 'utf8');
+    const lineOf = (position: number) =>
+        text.slice(0, position).split('\n').length;
+    const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest);
+    const typeOnly = new Set<string>();
+    for (const statement of source.statements) {
+        let specifier: ts.Expression | undefined;
+        let onlyTypes = false;
+        if (ts.isImportDeclaration(statement)) {
+            specifier = statement.moduleSpecifier;
+            onlyTypes = statement.importClause?.isTypeOnly === true;
+        } else if (ts.isExportDeclaration(statement)) {
+            specifier = statement.moduleSpecifier;
+            onlyTypes = statement.isTypeOnly;
+        }
+        if (!specifier || !ts.isStringLiteral(specifier)) continue;
+        if (onlyTypes)
+            typeOnly.add(
+                `${lineOf(specifier.getStart(source))}:${specifier.text}`,
+            );
+    }
+    return ts
+        .preProcessFile(text, true, true)
+        .importedFiles.flatMap((imported) => {
+            const path = resolveImport(file, imported.fileName);
+            const line = lineOf(imported.pos);
+            return path === null
+                ? []
+                : [
+                      {
+                          path,
+                          line,
+                          typeOnly: typeOnly.has(
+                              `${line}:${imported.fileName}`,
+                          ),
+                      },
+                  ];
+        });
+}
+
 const checked = files(src);
-const imports = new Map<string, { path: string; line: number }[]>();
+const imports = new Map<string, Import[]>();
 const violations: string[] = [];
 
 for (const file of [...checked, ...files(scripts)]) {
@@ -76,14 +135,11 @@ for (const file of [...checked, ...files(scripts)]) {
         violations.push(
             `${shown(file)}; tests live under test/, in the folder that mirrors the code they test.`,
         );
-    const text = readFileSync(file, 'utf8');
-    for (const imported of ts.preProcessFile(text, true, true).importedFiles) {
-        const path = resolveImport(file, imported.fileName);
-        if (path?.startsWith(tests + sep))
+    for (const { path } of importsOf(file))
+        if (path.startsWith(tests + sep))
             violations.push(
                 `${shown(file)} imports ${shown(path)}; code under src/ and scripts/ must not import test/.`,
             );
-    }
 }
 
 // test/scripts/x mencerminkan scripts/x, test/x mencerminkan src/x. Folder test yatim berarti kodenya sudah pindah.
@@ -99,23 +155,49 @@ for (const file of files(tests).filter(
             `${shown(file)}; test/${folder.replaceAll(sep, '/')} mirrors no folder. Move the test next to the mirror of the code it tests.`,
         );
 }
+
+// packages/<x>/test/y mencerminkan packages/<x>/src/y; packages/<x>/test/support/ berisi bantuan test.
+for (const owner of existsSync(packages)
+    ? readdirSync(packages, { withFileTypes: true })
+          .filter((entry) => entry.isDirectory())
+          .map((entry) => join(packages, entry.name))
+    : []) {
+    const ownTests = join(owner, 'test');
+    for (const file of files(owner)) {
+        const inTests = file.startsWith(ownTests + sep);
+        if (isTest(file) && !inTests)
+            violations.push(
+                `${shown(file)}; a package's tests live under its test/, in the folder that mirrors its src/.`,
+            );
+        if (isTest(file) && inTests) {
+            const folder = relative(ownTests, dirname(file));
+            if (
+                folder.split(sep)[0] !== 'support' &&
+                !existsSync(join(owner, 'src', folder))
+            )
+                violations.push(
+                    `${shown(file)}; ${shown(dirname(file))} mirrors no folder of ${shown(join(owner, 'src'))}.`,
+                );
+        }
+        for (const { path, line } of importsOf(file))
+            if (path.startsWith(src + sep) || path.startsWith(tests + sep))
+                violations.push(
+                    `${shown(file)}:${line} imports ${shown(path)}; packages/ must not import src/ or test/.`,
+                );
+    }
+}
+
 for (const file of checked) {
-    const text = readFileSync(file, 'utf8');
-    const lineOf = (position: number) =>
-        text.slice(0, position).split('\n').length;
-    const found = ts
-        .preProcessFile(text, true, true)
-        .importedFiles.flatMap((imported) => {
-            const path = resolveImport(file, imported.fileName);
-            return path === null ? [] : [{ path, line: lineOf(imported.pos) }];
-        });
+    const found = importsOf(file);
     imports.set(file, found);
     const ownUnit = unitOf(file);
     const ownAudience = audienceOf(file);
-    for (const { path, line } of found) {
+    const browser = isBrowser(file);
+    for (const { path, line, typeOnly } of found) {
         const at = `${shown(file)}:${line} imports ${shown(path)}`;
         const unit = unitOf(path);
-        if (unit && unit !== ownUnit && !isDoor(unit, path))
+        const routedPage = file === clientEntry && isPage(path);
+        if (unit && unit !== ownUnit && !isDoor(unit, path) && !routedPage)
             violations.push(
                 `${at}; outside ${shown(unit)}/ import only its index.ts or index.<audience>.ts.`,
             );
@@ -124,18 +206,30 @@ for (const file of checked) {
             violations.push(
                 `${at}; ${ownAudience} files must not import ${targetAudience} files.`,
             );
-        if (isProcess(path) && !isTest(file))
+        if (isProcess(path) && !isTest(file) && !(browser && typeOnly))
             violations.push(`${at}; only tests may import a process file.`);
+        if (isPage(path) && file !== clientEntry)
+            violations.push(
+                `${at}; only src/client.tsx imports pages, through the generated route tree.`,
+            );
+        if (!path.startsWith(src + sep)) continue;
+        if (browser && !isBrowser(path) && !typeOnly)
+            violations.push(
+                `${at}; browser code takes only types from server code (import type).`,
+            );
+        if (!browser && isBrowser(path))
+            violations.push(`${at}; server code must not import browser code.`);
     }
 }
 
+// Rantai impor setiap proses. Impor tipe tidak ikut dibundel, jadi tidak dihitung.
 for (const entry of checked.filter(isProcess)) {
     const allowed = processAudience(entry);
     const seen = new Set<string>([entry]);
     const queue = [entry];
     for (let file = queue.shift(); file; file = queue.shift())
-        for (const { path } of imports.get(file) ?? [])
-            if (!seen.has(path)) {
+        for (const { path, typeOnly } of imports.get(file) ?? [])
+            if (!typeOnly && !seen.has(path)) {
                 seen.add(path);
                 queue.push(path);
             }
@@ -154,5 +248,5 @@ if (violations.length) {
     process.exit(1);
 }
 console.log(
-    `Boundaries hold across ${checked.length} files under src/ and the tests under test/.`,
+    `Boundaries hold across ${checked.length} files under src/, the packages under packages/, and the tests under test/.`,
 );
