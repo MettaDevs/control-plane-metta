@@ -264,5 +264,17 @@
                 "successStatus": 204
             }
         }
+    },
+    "requestEnvironmentOperation": {
+        "~orpc": {
+            "errorMap": {},
+            "meta": {},
+            "route": {
+                "method": "POST",
+                "path": "/api/v1/environments/{environment}/operations",
+                "inputStructure": "detailed",
+                "successStatus": 201
+            }
+        }
     }
 }

@@ -1,12 +1,20 @@
 import { Badge } from '@control-plane-metta/ui/badge';
+import { Button } from '@control-plane-metta/ui/button';
 import { DataTable, DataTableText } from '@control-plane-metta/ui/data-table';
 import { displayDate } from '@control-plane-metta/ui/date-picker';
 import { RecordActionBar } from '@control-plane-metta/ui/record-action-bar';
-import { useSuspenseQuery } from '@tanstack/react-query';
+import { useConfirmation } from '@control-plane-metta/ui/use-confirmation';
+import {
+    useMutation,
+    useQueryClient,
+    useSuspenseQuery,
+} from '@tanstack/react-query';
 import { useParams } from '@tanstack/react-router';
 import type { ReactNode } from 'react';
+import { toast } from 'sonner';
 import {
     definePage,
+    errorText,
     orpc,
     type ApiOutput,
 } from '../../platform/shell/index.ts';
@@ -76,6 +84,32 @@ function EnvironmentSection({
     environment: Environment;
 }): ReactNode {
     const status = environmentStatus(environment.status);
+    const queryClient = useQueryClient();
+    const { confirm, confirmation } = useConfirmation();
+    const migrate = useMutation(
+        orpc.requestEnvironmentOperation.mutationOptions({
+            onSuccess: async () => {
+                toast.success('Pembaruan skema menunggu diambil worker.');
+                await queryClient.invalidateQueries({
+                    queryKey: orpc.showCustomer.key(),
+                });
+            },
+            onError: (caught) =>
+                toast.error(
+                    errorText(caught, 'Pembaruan skema belum diminta.'),
+                ),
+        }),
+    );
+    const busy = environment.operations.some((operation) =>
+        openStatuses.has(operation.status),
+    );
+    const unavailable = !environment.database_name
+        ? 'Lingkungan ini memakai database bersama; skemanya diperbarui bersama runtime.'
+        : !environment.provisioned
+          ? 'Penyiapan lingkungan ini belum pernah selesai.'
+          : busy
+            ? 'Lingkungan ini masih punya operasi yang belum selesai.'
+            : null;
     return (
         <section className="flex flex-col gap-3 rounded-lg border p-4">
             <div className="flex flex-wrap items-center gap-2">
@@ -83,6 +117,29 @@ function EnvironmentSection({
                     <EnvironmentName environment={environment} />
                 </h2>
                 <Badge variant={status.variant}>{status.label}</Badge>
+                <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="ml-auto"
+                    disabled={unavailable !== null || migrate.isPending}
+                    title={unavailable ?? undefined}
+                    onClick={async () => {
+                        if (
+                            await confirm({
+                                title: 'Perbarui skema database?',
+                                description: `Worker di ${environment.runtime_host ?? 'host runtime'} menjalankan migration yang belum terpasang di ${environment.database_name ?? 'database ini'}, sampai skemanya sama dengan versi aplikasi di host itu. Migration tidak dapat dibatalkan setelah berjalan.`,
+                                confirmLabel: 'Perbarui skema',
+                            })
+                        )
+                            migrate.mutate({
+                                params: { environment: environment.id },
+                                body: { operation: 'migrate' },
+                            });
+                    }}
+                >
+                    Perbarui skema
+                </Button>
             </div>
             <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <Fact label="Database">{environment.database_name ?? '-'}</Fact>
@@ -167,6 +224,7 @@ function EnvironmentSection({
                     },
                 ]}
             />
+            {confirmation}
         </section>
     );
 }

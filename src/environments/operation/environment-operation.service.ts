@@ -1,5 +1,7 @@
 import { z } from 'zod';
-import type { Database } from '../../platform/database/index.ts';
+import { recordAudit } from '../../platform/audit/index.ts';
+import { type Database, sqlErrorCode } from '../../platform/database/index.ts';
+import { HttpFailure } from '../../platform/http/index.ts';
 
 // Antrean lingkungan, model tarik: konsol meminta, worker operations-metta di host runtime mengambil (claim) satu per
 // satu dengan tenggat, melaporkan langkahnya, lalu menutupnya. Setiap langkah dan penutupan mensyaratkan operasi masih
@@ -7,6 +9,9 @@ import type { Database } from '../../platform/database/index.ts';
 // lingkungan (di CoreERP penutupan sukses tidak memeriksa ini). Tidak ada penjadwal: tenggat yang lewat ditutup saat
 // antrean dibaca.
 export const leaseMinutes = 30;
+
+export const environmentOperations = ['provision', 'migrate'] as const;
+export type EnvironmentOperation = (typeof environmentOperations)[number];
 
 const now = "now() at time zone 'utc'";
 const iso = (column: string) =>
@@ -82,7 +87,11 @@ export type Step = z.infer<typeof stepSchema>;
 // provisioning, supaya konsol tahu ada yang harus diperiksa.
 const environmentAfter = {
     provision: { succeeded: 'active', failed: 'degraded' },
-} as const;
+    migrate: { succeeded: 'active', failed: 'degraded' },
+} as const satisfies Record<
+    EnvironmentOperation,
+    Record<'succeeded' | 'failed', string>
+>;
 
 // Langkah running memperpanjang tenggat; succeeded dan failed menutup operasi dan mengubah status lingkungannya dalam
 // transaksi yang sama. null berarti operasi tidak lagi dipegang host ini, dan worker harus berhenti.
@@ -96,7 +105,7 @@ export async function recordStep(
         const held = await db.one(
             z.object({
                 environment_id: z.string(),
-                operation: z.enum(['provision']),
+                operation: z.enum(environmentOperations),
             }),
             `select o.environment_id, o.operation from environment_operations o
              join environments e on e.id = o.environment_id
@@ -135,5 +144,77 @@ export async function recordStep(
             ],
         );
         return { lease_until: null };
+    });
+}
+
+// Meminta worker memigrasi database lingkungan ke skema kode di host runtime-nya. Hanya untuk lingkungan dengan
+// database sendiri yang penyiapannya pernah selesai: database bersama dimigrasi saat runtime di-deploy, dan penyiapan
+// yang belum selesai harus diulang, bukan dimigrasi.
+export async function requestMigration(
+    db: Database,
+    actor: { operatorId: string; ipAddress: string | null },
+    environmentId: string,
+): Promise<{ id: string }> {
+    const id = Bun.randomUUIDv7();
+    return db.transaction(async () => {
+        const environment = await db.one(
+            z.object({
+                database_name: z.string().nullable(),
+                hosting: z.string(),
+                provisioned: z.boolean(),
+            }),
+            `select database_name, hosting, schema_migrated_at is not null as provisioned
+             from environments where id = $1 and deleted_at is null for update`,
+            [environmentId],
+        );
+        if (!environment)
+            throw new HttpFailure(404, {
+                error: 'environment_not_found',
+                message: 'Lingkungan tidak ditemukan.',
+            });
+        if (environment.hosting !== 'provider' || !environment.database_name)
+            throw new HttpFailure(409, {
+                error: 'environment_not_migratable',
+                message:
+                    'Lingkungan ini tidak punya database sendiri di server kita, jadi skemanya diperbarui bersama runtime-nya.',
+            });
+        if (!environment.provisioned)
+            throw new HttpFailure(409, {
+                error: 'environment_not_provisioned',
+                message:
+                    'Penyiapan lingkungan ini belum pernah selesai, jadi skemanya belum bisa diperbarui.',
+            });
+        try {
+            // Savepoint: transaksi PostgreSQL batal seluruhnya bila 23505 ditangkap tanpanya.
+            await db.transaction(() =>
+                db.execute(
+                    `insert into environment_operations (id, environment_id, operation, status, requested_by, parameters,
+                        requested_at)
+                     values ($1, $2, 'migrate', 'requested', $3, $4::text::jsonb, ${now})`,
+                    [
+                        id,
+                        environmentId,
+                        actor.operatorId,
+                        JSON.stringify({ database: environment.database_name }),
+                    ],
+                ),
+            );
+        } catch (error) {
+            if (sqlErrorCode(error) === '23505')
+                throw new HttpFailure(409, {
+                    error: 'operation_pending',
+                    message:
+                        'Lingkungan ini masih punya operasi yang belum selesai.',
+                });
+            throw error;
+        }
+        await recordAudit(db, {
+            ...actor,
+            action: 'environment.operation.requested',
+            subjectType: 'environment',
+            subjectId: environmentId,
+            detail: { operation_id: id, operation: 'migrate' },
+        });
+        return { id };
     });
 }

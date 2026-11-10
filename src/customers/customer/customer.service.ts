@@ -277,7 +277,7 @@ const environmentStatusSchema = z.enum([
     'degraded',
     'suspended',
 ]);
-const operationNameSchema = z.enum(['provision']);
+const operationNameSchema = z.enum(['provision', 'migrate']);
 const operationStatusSchema = z.enum([
     'requested',
     'running',
@@ -349,6 +349,8 @@ const customerDetailSchema = z.object({
                     status: environmentStatusSchema,
                     database_name: z.string().nullable(),
                     runtime_host: z.string().nullable(),
+                    // Penyiapannya pernah selesai, jadi skemanya boleh diperbarui.
+                    provisioned: z.boolean(),
                     expires_at: z.string().nullable(),
                     created_at: z.string().nullable(),
                     operations: z.array(
@@ -382,6 +384,7 @@ export async function findCustomer(db: Database, clientId: string) {
                 'environments', coalesce((select json_agg(json_build_object(
                     'id', e.id, 'kind', e.kind, 'name', e.name, 'status', e.status,
                     'database_name', e.database_name, 'runtime_host', h.name,
+                    'provisioned', e.schema_migrated_at is not null,
                     'expires_at', to_char(e.expires_at, 'YYYY-MM-DD'),
                     'created_at', ${iso('e.created_at')},
                     'operations', coalesce((select json_agg(json_build_object(

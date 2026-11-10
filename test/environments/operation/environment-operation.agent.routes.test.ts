@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { agentRouter } from '../../../src/agent.ts';
 import { createCustomer } from '../../../src/customers/customer/customer.service.ts';
 import { addRuntimeHost } from '../../../src/environments/index.ts';
+import { requestMigration } from '../../../src/environments/operation/environment-operation.service.ts';
 import { loadConfig } from '../../../src/platform/config/index.ts';
 import { createPool, Database } from '../../../src/platform/database/index.ts';
 import { createApplication } from '../../../src/platform/http/index.ts';
@@ -260,5 +261,87 @@ describe.skipIf(!process.env.DB_HOST)('worker environment queue', () => {
             [worker.id],
         );
         expect(bound?.count).toBe(1);
+    });
+
+    test('migrate hanya untuk lingkungan yang sudah disiapkan, diambil host lingkungannya, dan ditutup seperti penyiapan', async () => {
+        const worker = await host();
+        const created = await customer(worker.id);
+        const actor = { operatorId: await operator(), ipAddress: null };
+        const refused = (promise: Promise<unknown>) =>
+            promise.then(
+                () => null,
+                (error: unknown) =>
+                    z.object({ status: z.number() }).parse(error).status,
+            );
+        expect(
+            await refused(requestMigration(db, actor, created.environment_id)),
+        ).toBe(409);
+        expect(
+            await refused(requestMigration(db, actor, crypto.randomUUID())),
+        ).toBe(404);
+
+        const provision = claimedSchema.parse(
+            await (await worker.call('/api/worker/v1/operations/claim')).json(),
+        ).operation;
+        await worker.call(`/api/worker/v1/operations/${provision.id}/steps`, {
+            status: 'succeeded',
+            step: 'done',
+        });
+
+        const migrateSchema = z.object({
+            operation: z.object({
+                id: z.string(),
+                operation: z.literal('migrate'),
+                environment_id: z.string(),
+                parameters: z.strictObject({ database: z.string() }),
+            }),
+        });
+        const first = await requestMigration(db, actor, created.environment_id);
+        expect(
+            await refused(requestMigration(db, actor, created.environment_id)),
+        ).toBe(409);
+        const claimed = migrateSchema.parse(
+            await (await worker.call('/api/worker/v1/operations/claim')).json(),
+        ).operation;
+        expect(claimed).toMatchObject({
+            id: first.id,
+            environment_id: created.environment_id,
+            parameters: { database: provision.parameters.database },
+        });
+        await worker.call(`/api/worker/v1/operations/${first.id}/steps`, {
+            status: 'failed',
+            step: 'failed',
+            failure_message: 'relation already exists',
+        });
+        expect(await state(created.environment_id, first.id)).toMatchObject({
+            environment: 'degraded',
+            operation: 'failed',
+        });
+
+        const second = await requestMigration(
+            db,
+            actor,
+            created.environment_id,
+        );
+        migrateSchema.parse(
+            await (await worker.call('/api/worker/v1/operations/claim')).json(),
+        );
+        await worker.call(`/api/worker/v1/operations/${second.id}/steps`, {
+            status: 'succeeded',
+            step: 'done',
+        });
+        expect(await state(created.environment_id, second.id)).toMatchObject({
+            environment: 'active',
+            operation: 'succeeded',
+            migrated: true,
+        });
+        const [audit] = await pool.unsafe(
+            "select detail from operator_audit_events where action = 'environment.operation.requested' and subject_id = $1 order by id desc limit 1",
+            [created.environment_id],
+        );
+        expect(audit?.detail).toEqual({
+            operation_id: second.id,
+            operation: 'migrate',
+        });
     });
 });
