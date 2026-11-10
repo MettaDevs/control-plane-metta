@@ -4,6 +4,9 @@ import { createRoute, createRouter } from '@tanstack/react-router';
 import { page as customersCustomerCustomersPage } from './customers/customer/customers.console.page.tsx';
 import { page as customersCustomerNewCustomerPage } from './customers/customer/new-customer.console.page.tsx';
 import { page as platformShellLoginPage } from './platform/shell/login.console.page.tsx';
+import { page as releasesReleasesPage } from './releases/releases.console.page.tsx';
+import { page as sitesSiteSitePage } from './sites/site/site.console.page.tsx';
+import { page as sitesSiteSitesPage } from './sites/site/sites.console.page.tsx';
 import {
     appLayoutRoute,
     authLayoutRoute,
@@ -35,11 +38,35 @@ const platformShellLoginRoute = createRoute({
     staticData: { title: platformShellLoginPage.title },
 });
 
+const releasesReleasesRoute = createRoute({
+    getParentRoute: () => appLayoutRoute,
+    path: releasesReleasesPage.path,
+    component: releasesReleasesPage.component,
+    staticData: { title: releasesReleasesPage.title },
+});
+
+const sitesSiteSiteRoute = createRoute({
+    getParentRoute: () => appLayoutRoute,
+    path: sitesSiteSitePage.path,
+    component: sitesSiteSitePage.component,
+    staticData: { title: sitesSiteSitePage.title },
+});
+
+const sitesSiteSitesRoute = createRoute({
+    getParentRoute: () => appLayoutRoute,
+    path: sitesSiteSitesPage.path,
+    component: sitesSiteSitesPage.component,
+    staticData: { title: sitesSiteSitesPage.title },
+});
+
 const routeTree = rootRoute.addChildren([
     indexRoute,
     appLayoutRoute.addChildren([
         customersCustomerCustomersRoute,
         customersCustomerNewCustomerRoute,
+        releasesReleasesRoute,
+        sitesSiteSiteRoute,
+        sitesSiteSitesRoute,
     ]),
     authLayoutRoute.addChildren([platformShellLoginRoute]),
 ]);

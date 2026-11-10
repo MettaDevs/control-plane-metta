@@ -50,7 +50,11 @@ describe.skipIf(!process.env.DB_HOST)('site console', () => {
             sites: { id: string; state: string; tenant_name: string }[];
         };
         expect(list.sites.find((row) => row.id === fresh.siteId)).toMatchObject(
-            { state: 'not_enrolled', tenant_name: 'Klinik Konsol' },
+            {
+                state: 'not_enrolled',
+                tenant_name: 'Klinik Konsol',
+                edition: 'coreerp',
+            },
         );
         expect(list.sites.find((row) => row.id === site.siteId)?.state).toBe(
             'stale',

@@ -25,10 +25,13 @@ export function AppSidebar() {
         setPinnedId(null);
     }
 
+    // Halaman record (`/sites/<id>`) tidak ada di menu, jadi ia ikut kelompok yang alamatnya mengawali alamat halaman.
     const selectedGroup =
         navigation.find((group) =>
             group.items.some((item) => path === item.href.split('?')[0]),
-        ) ?? navigation[0];
+        ) ??
+        navigation.find((group) => path.startsWith(`${group.href}/`)) ??
+        navigation[0];
     const isItemActive = (item: NavigationItem) =>
         url === item.href || (!item.href.includes('?') && path === item.href);
     const displayedGroup =
