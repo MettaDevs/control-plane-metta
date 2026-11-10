@@ -23,6 +23,7 @@ export function consoleTestApp(key: number) {
             body?: unknown;
             cookie?: string;
             type?: string;
+            headers?: Record<string, string>;
         } = {},
     ) =>
         application.handle(
@@ -31,6 +32,7 @@ export function consoleTestApp(key: number) {
                 headers: {
                     'content-type': init.type ?? 'application/json',
                     ...(init.cookie ? { cookie: init.cookie } : {}),
+                    ...init.headers,
                 },
                 body:
                     init.body === undefined
