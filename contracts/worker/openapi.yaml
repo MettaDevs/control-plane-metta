@@ -33,10 +33,14 @@ info:
       karena demo yang gagal dikonversi masih utuh dan sedang dipakai. Penutupan `succeeded` operasi `expire`
       menghapus lunak lingkungannya (isinya boleh dibuang setelah masa tenggang, bawaannya 30 hari); `failed` tidak
       mengubah lingkungan. Penutupan `succeeded` operasi `restore` melepas hapus lunaknya dan mengembalikan status
-      sebelum dihapus; `failed` membiarkannya tetap dihapus. Setiap penutupan membuang
+      sebelum dihapus; `failed` membiarkannya tetap dihapus. Penutupan `succeeded` operasi `purge` mencatat
+      `purged_at`; baris lingkungan dan riwayatnya tidak dihapus. Setiap penutupan membuang
       `parameters.admin.password_hash`.
-    - Operasi `expire` tidak diminta operator. Demo yang tanggal berakhirnya lewat diantrekan saat host pemegangnya
-      memanggil claim, kecuali masih punya operasi terbuka atau expire-nya gagal kurang dari sejam yang lalu.
+    - Operasi `expire` dan `purge` tidak diminta operator. Keduanya diantrekan saat host pemegang lingkungannya
+      memanggil claim, kecuali lingkungan itu masih punya operasi terbuka atau operasi yang sama gagal kurang dari
+      sejam yang lalu: `expire` untuk demo yang tanggal berakhirnya lewat, `purge` untuk lingkungan bukan produksi
+      yang dihapus lunak dan masa tenggangnya habis. Claim membawa `restore` dan `purge` walaupun lingkungannya sedang
+      dihapus.
 
     ## Operasi
 
@@ -56,6 +60,9 @@ info:
       dinonaktifkan `expire`, selama alamat itu masih menunjuk database yang sama. Diminta operator untuk lingkungan
       yang dihapus lunak dan masa tenggangnya belum habis; claim membawanya walaupun lingkungannya sedang dihapus.
       Parameternya `RestoreParameters`.
+    - `purge`: membuang database lingkungan secara permanen (`DROP DATABASE ... WITH (FORCE)`). Alamatnya tetap
+      tercatat nonaktif sebagai nisan. Worker menolak membuang database yang masih ditunjuk alamat aktif. Database null
+      (database bersama runtime) tidak pernah dibuang. Parameternya `PurgeParameters`.
 servers:
   - url: /api/worker/v1
 paths:
@@ -190,7 +197,7 @@ components:
           format: uuid
         operation:
           type: string
-          enum: [provision, migrate, convert, expire, restore]
+          enum: [provision, migrate, convert, expire, restore, purge]
         environment_id:
           type: string
           format: uuid
@@ -198,13 +205,14 @@ components:
           type: string
           format: date-time
         parameters:
-          description: '`ProvisionParameters` untuk `provision`, `MigrateParameters` untuk `migrate`, `ConvertParameters` untuk `convert`, `ExpireParameters` untuk `expire`, `RestoreParameters` untuk `restore`.'
+          description: '`ProvisionParameters` untuk `provision`, `MigrateParameters` untuk `migrate`, `ConvertParameters` untuk `convert`, `ExpireParameters` untuk `expire`, `RestoreParameters` untuk `restore`, `PurgeParameters` untuk `purge`.'
           oneOf:
             - $ref: '#/components/schemas/ProvisionParameters'
             - $ref: '#/components/schemas/MigrateParameters'
             - $ref: '#/components/schemas/ConvertParameters'
             - $ref: '#/components/schemas/ExpireParameters'
             - $ref: '#/components/schemas/RestoreParameters'
+            - $ref: '#/components/schemas/PurgeParameters'
     ProvisionParameters:
       description: |
         Permintaan penyiapan operations-metta (`provisionRequestSchema` di `src/platform/environment/` repo itu),
@@ -294,6 +302,20 @@ components:
           enum: [production, sandbox, demo]
         database:
           description: Database lingkungan; null berarti database bersama runtime.
+          type: [string, 'null']
+          pattern: '^[a-z][a-z0-9_]{0,62}$'
+    PurgeParameters:
+      type: object
+      additionalProperties: false
+      required: [tenant_slug, kind, database]
+      properties:
+        tenant_slug:
+          type: string
+        kind:
+          type: string
+          enum: [sandbox, demo]
+        database:
+          description: Database lingkungan; null berarti database bersama runtime, yang tidak pernah dibuang.
           type: [string, 'null']
           pattern: '^[a-z][a-z0-9_]{0,62}$'
     Step:

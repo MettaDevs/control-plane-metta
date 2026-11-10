@@ -16,6 +16,7 @@ export const environmentOperations = [
     'convert',
     'expire',
     'restore',
+    'purge',
 ] as const;
 export type EnvironmentOperation = (typeof environmentOperations)[number];
 
@@ -50,42 +51,82 @@ async function expireStale(db: Database): Promise<void> {
     );
 }
 
-// Demo yang tanggal berakhirnya sudah lewat diantrekan sebagai operasi expire setiap kali host pemegangnya meminta
-// pekerjaan, jadi tidak ada penjadwal yang harus dijalankan terpisah. Status tidak disaring: demo yang degraded pun
-// kedaluwarsa. Lingkungan yang masih punya operasi terbuka dilewati oleh index unik, dan expire yang baru saja gagal
-// tidak diantrekan ulang selama sejam supaya worker tidak mengulang kegagalan yang sama setiap kali meminta.
-const expireRetryMinutes = 60;
+// Operasi yang tidak diminta operator: diantrekan setiap kali host pemegang lingkungannya meminta pekerjaan, jadi tidak
+// ada penjadwal yang harus dijalankan terpisah.
+// - expire: demo yang tanggal berakhirnya lewat. Status tidak disaring; demo yang degraded pun kedaluwarsa.
+// - purge: lingkungan yang dihapus lunak dan masa tenggangnya habis. Produksi tidak pernah, apa pun statusnya, dan CHECK
+//   environments_produksi_tidak_dibuang menolaknya sekali lagi.
+// Lingkungan yang masih punya operasi terbuka dilewati, dan operasi yang baru saja gagal tidak diantrekan ulang selama
+// sejam supaya worker tidak mengulang kegagalan yang sama setiap kali meminta.
+const scheduledRetryMinutes = 60;
+const scheduledOperations = {
+    expire: `e.kind = 'demo' and e.deleted_at is null and e.expires_at <= ${now}`,
+    purge: `e.kind <> 'production' and e.status = 'soft_deleted' and e.deleted_at is not null
+        and e.purged_at is null and e.purge_after <= ${now}`,
+} as const satisfies Partial<Record<EnvironmentOperation, string>>;
 
-async function enqueueExpired(db: Database, hostId: string): Promise<void> {
-    const expired = await db.rows(
-        z.object({
-            id: z.string(),
-            tenant_slug: z.string(),
-            database_name: z.string().nullable(),
-        }),
-        `select e.id, t.slug as tenant_slug, e.database_name
-         from environments e join tenants t on t.id = e.tenant_id
-         where e.runtime_host_id = $1 and e.kind = 'demo' and e.hosting = 'provider' and e.deleted_at is null
-           and e.expires_at <= ${now}
-           and not exists (select 1 from environment_operations x where x.environment_id = e.id
-                           and x.status in ('requested', 'running'))
-           and not exists (select 1 from environment_operations x where x.environment_id = e.id
-                           and x.operation = 'expire' and x.finished_at > ${now} - make_interval(mins => $2))`,
-        [hostId, expireRetryMinutes],
-    );
-    for (const environment of expired)
-        await db.execute(
-            `insert into environment_operations (id, environment_id, operation, status, parameters, requested_at)
-             values ($1, $2, 'expire', 'requested', $3::text::jsonb, ${now}) on conflict do nothing`,
-            [
-                Bun.randomUUIDv7(),
-                environment.id,
-                JSON.stringify({
-                    tenant_slug: environment.tenant_slug,
-                    database: environment.database_name,
-                }),
-            ],
+function scheduledParameters(
+    operation: keyof typeof scheduledOperations,
+    environment: {
+        tenant_slug: string;
+        kind: string;
+        database_name: string | null;
+    },
+): Record<string, unknown> {
+    switch (operation) {
+        case 'expire':
+            return {
+                tenant_slug: environment.tenant_slug,
+                database: environment.database_name,
+            };
+        case 'purge':
+            return {
+                tenant_slug: environment.tenant_slug,
+                kind: environment.kind,
+                database: environment.database_name,
+            };
+        default: {
+            const unknown: never = operation;
+            throw new Error(
+                `Operasi terjadwal tidak dikenal: ${String(unknown)}`,
+            );
+        }
+    }
+}
+
+async function enqueueScheduled(db: Database, hostId: string): Promise<void> {
+    for (const [operation, due] of Object.entries(scheduledOperations) as [
+        keyof typeof scheduledOperations,
+        string,
+    ][]) {
+        const environments = await db.rows(
+            z.object({
+                id: z.string(),
+                tenant_slug: z.string(),
+                kind: z.string(),
+                database_name: z.string().nullable(),
+            }),
+            `select e.id, t.slug as tenant_slug, e.kind, e.database_name
+             from environments e join tenants t on t.id = e.tenant_id
+             where e.runtime_host_id = $1 and e.hosting = 'provider' and ${due}
+               and not exists (select 1 from environment_operations x where x.environment_id = e.id
+                               and x.status in ('requested', 'running'))
+               and not exists (select 1 from environment_operations x where x.environment_id = e.id
+                               and x.operation = $2 and x.finished_at > ${now} - make_interval(mins => $3))`,
+            [hostId, operation, scheduledRetryMinutes],
         );
+        for (const environment of environments)
+            await db.execute(
+                `insert into environment_operations (id, environment_id, operation, status, parameters, requested_at)
+                 values ($1, $2, $3, 'requested', $4::text::jsonb, ${now}) on conflict do nothing`,
+                [
+                    Bun.randomUUIDv7(),
+                    environment.id,
+                    operation,
+                    JSON.stringify(scheduledParameters(operation, environment)),
+                ],
+            );
+    }
 }
 
 // Operasi tertua yang boleh diambil host ini, atau null: milik lingkungan yang sudah terikat ke host ini (didahulukan),
@@ -96,14 +137,14 @@ export async function claimOperation(
 ): Promise<ClaimedOperation | null> {
     return db.transaction(async () => {
         await expireStale(db);
-        await enqueueExpired(db, hostId);
+        await enqueueScheduled(db, hostId);
         const claimed = await db.one(
             claimedSchema,
             `with next as (
                 select o.id, o.environment_id from environment_operations o
                 join environments e on e.id = o.environment_id
                 where o.status = 'requested' and e.hosting = 'provider'
-                  and (e.deleted_at is null or o.operation = 'restore')
+                  and (e.deleted_at is null or o.operation in ('restore', 'purge'))
                   and (e.runtime_host_id is null or e.runtime_host_id = $1)
                 order by e.runtime_host_id is null, o.requested_at, o.id limit 1
                 for update of o, e skip locked
@@ -140,6 +181,7 @@ const environmentAfter = {
     convert: { succeeded: 'active', failed: null, migrates: false },
     expire: { succeeded: null, failed: null, migrates: false },
     restore: { succeeded: null, failed: null, migrates: false },
+    purge: { succeeded: null, failed: null, migrates: false },
 } as const satisfies Record<
     EnvironmentOperation,
     { succeeded: string | null; failed: string | null; migrates: boolean }
@@ -304,6 +346,13 @@ export async function recordStep(
             `update environment_operations set ${closing(status)}, step = $2, failure_message = $3 where id = $1`,
             [operationId, step.step, failure],
         );
+        // Worker sudah membuang databasenya. purged_at menjadi nisannya: barisnya dan riwayat operasinya tetap ada.
+        if (held.operation === 'purge' && status === 'succeeded')
+            await db.execute(
+                `update environments set purged_at = ${now}, updated_at = ${now}
+                 where id = $1 and deleted_at is not null and purged_at is null and kind <> 'production'`,
+                [held.environment_id],
+            );
         if (held.operation === 'expire' && status === 'succeeded')
             await softDelete(
                 db,

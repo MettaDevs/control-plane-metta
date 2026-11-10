@@ -59,6 +59,8 @@ export function operationName(operation: Operation['operation']): string {
             return 'Kedaluwarsa';
         case 'restore':
             return 'Pemulihan';
+        case 'purge':
+            return 'Pembuangan';
         default: {
             const unknown: never = operation;
             return unknown;

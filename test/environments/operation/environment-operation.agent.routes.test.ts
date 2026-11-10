@@ -772,4 +772,134 @@ describe.skipIf(!process.env.DB_HOST)('worker environment queue', () => {
         );
         expect(await refused('2099-12-31')).toBe(409);
     });
+
+    test('purge diantrekan setelah masa tenggang habis, tidak pernah untuk produksi, dan sukses mencatat nisannya', async () => {
+        const worker = await host();
+        const actor = { operatorId: await operator(), ipAddress: null };
+        const demo = await createCustomer(db, actor, crypto.randomUUID(), {
+            legal_name: 'PT Klinik Buang',
+            slug: `purge-${crypto.randomUUID().slice(-12)}`,
+            admin: { name: 'Admin', email: 'admin@purge.test' },
+            environment: {
+                kind: 'demo',
+                name: 'Demo',
+                expires_at: '2099-01-31',
+            },
+        });
+        const production = await customer(worker.id);
+        const environmentId = demo.environment_id;
+        await db.execute(
+            'update environments set runtime_host_id = $2 where id = $1',
+            [environmentId, worker.id],
+        );
+        const own = new Set([environmentId, production.environment_id]);
+        const operationSchema = z.object({
+            operation: z.object({
+                id: z.string(),
+                operation: z.string(),
+                environment_id: z.string(),
+                parameters: z.record(z.string(), z.unknown()),
+            }),
+        });
+        // Operasi lingkungan test ini yang diambil host; operasi tinggalan berkas test lain diabaikan.
+        const claimOwn = async () => {
+            for (let attempt = 0; attempt < 20; attempt++) {
+                const response = await worker.call(
+                    '/api/worker/v1/operations/claim',
+                );
+                if (response.status !== 200) return null;
+                const { operation } = operationSchema.parse(
+                    await response.json(),
+                );
+                if (own.has(operation.environment_id)) return operation;
+            }
+            return null;
+        };
+        const close = (id: string, status: 'succeeded' | 'failed') =>
+            worker.call(`/api/worker/v1/operations/${id}/steps`, {
+                status,
+                step: status === 'succeeded' ? 'done' : 'failed',
+                ...(status === 'failed'
+                    ? {
+                          failure_message:
+                              'database masih ditunjuk alamat aktif',
+                      }
+                    : {}),
+            });
+        const purges = async (id: string) =>
+            (
+                await pool.unsafe(
+                    "select count(*)::int as count from environment_operations where environment_id = $1 and operation = 'purge'",
+                    [id],
+                )
+            )[0]?.count;
+        for (let opened = 0; opened < 2; opened++) {
+            const provision = await claimOwn();
+            expect(provision?.operation).toBe('provision');
+            await close(provision!.id, 'succeeded');
+        }
+
+        await db.execute(
+            "update environments set expires_at = now() at time zone 'utc' - interval '1 day' where id = $1",
+            [environmentId],
+        );
+        const expire = await claimOwn();
+        expect(expire?.operation).toBe('expire');
+        await close(expire!.id, 'succeeded');
+        // Masih dalam masa tenggang.
+        await claimOwn();
+        expect(await purges(environmentId)).toBe(0);
+
+        // Tenggang habis, dan produksi yang dihapus lunak dengan tenggang habis ikut disiapkan sebagai pembanding.
+        await db.execute(
+            `update environments set purge_after = now() at time zone 'utc' - interval '1 hour' where id = $1`,
+            [environmentId],
+        );
+        await db.execute(
+            `update environments set status = 'soft_deleted', deleted_at = now() at time zone 'utc' - interval '40 days',
+                purge_after = now() at time zone 'utc' - interval '10 days' where id = $1`,
+            [production.environment_id],
+        );
+        const failing = await claimOwn();
+        expect(failing).toMatchObject({
+            operation: 'purge',
+            environment_id: environmentId,
+        });
+        const [registered] = await pool.unsafe(
+            'select t.slug, e.database_name from environments e join tenants t on t.id = e.tenant_id where e.id = $1',
+            [environmentId],
+        );
+        expect(failing?.parameters).toEqual({
+            tenant_slug: registered?.slug,
+            kind: 'demo',
+            database: registered?.database_name,
+        });
+        await close(failing!.id, 'failed');
+        const purged = async () =>
+            (
+                await pool.unsafe(
+                    'select purged_at is not null as purged, status from environments where id = $1',
+                    [environmentId],
+                )
+            )[0];
+        expect(await purged()).toMatchObject({
+            purged: false,
+            status: 'soft_deleted',
+        });
+
+        await db.execute(
+            "update environment_operations set finished_at = finished_at - interval '2 hours' where id = $1",
+            [failing!.id],
+        );
+        const retry = await claimOwn();
+        expect(retry?.operation).toBe('purge');
+        await close(retry!.id, 'succeeded');
+        expect(await purged()).toMatchObject({
+            purged: true,
+            status: 'soft_deleted',
+        });
+        await claimOwn();
+        expect(await purges(environmentId)).toBe(2);
+        expect(await purges(production.environment_id)).toBe(0);
+    });
 });
