@@ -19,7 +19,7 @@ export function portalRouter(config: Config, portal: PortalSettings) {
         ...healthRoutes(),
         ...portalSsoRoutes(config, portal, session),
         ...portalAccountRoutes(session),
-        ...portalEnvironmentRoutes(session),
+        ...portalEnvironmentRoutes(config, session),
     };
 }
 

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { environmentAddress } from '../../environments/index.ts';
 import type { Database } from '../../platform/database/index.ts';
 import {
     environmentKindSchema,
@@ -13,6 +14,7 @@ const customerSchema = z.object({
         z.object({
             id: z.string(),
             name: z.string(),
+            slug: z.string(),
             environments: z.array(
                 z.object({
                     id: z.string(),
@@ -39,12 +41,13 @@ const customerSchema = z.object({
 export async function listPortalEnvironments(
     db: Database,
     identity: PortalIdentity,
+    operationsUrl: string | undefined,
 ) {
-    return db.rows(
+    const customers = await db.rows(
         customerSchema,
         `select c.id as client_id, c.legal_name,
             coalesce((select json_agg(json_build_object(
-                'id', t.id, 'name', t.name,
+                'id', t.id, 'name', t.name, 'slug', t.slug,
                 'environments', coalesce((select json_agg(json_build_object(
                     'id', e.id, 'kind', e.kind, 'name', e.name, 'status', e.status,
                     'expires_at', to_char(e.expires_at, 'YYYY-MM-DD')) order by e.created_at)
@@ -62,4 +65,18 @@ export async function listPortalEnvironments(
          order by c.legal_name`,
         [identity.issuer, identity.subject],
     );
+    return customers.map((customer) => ({
+        ...customer,
+        tenants: customer.tenants.map((tenant) => ({
+            ...tenant,
+            environments: tenant.environments.map((environment) => ({
+                ...environment,
+                address: environmentAddress(
+                    operationsUrl,
+                    tenant.slug,
+                    environment.kind,
+                ),
+            })),
+        })),
+    }));
 }

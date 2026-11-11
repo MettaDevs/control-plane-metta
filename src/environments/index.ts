@@ -1,3 +1,4 @@
+export { environmentAddress } from './address.ts';
 export { desiredEntitlements } from './operation/environment-operation.service.ts';
 export {
     placeEnvironment,

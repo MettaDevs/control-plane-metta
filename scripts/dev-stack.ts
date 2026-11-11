@@ -205,6 +205,7 @@ const consoleEnv: Env = {
     DB_DATABASE: 'control_plane_dev',
     APP_KEY: state.consoleKey,
     SESSION_SECURE_COOKIE: 'false',
+    OPERATIONS_URL: `http://localhost:${String(ports.operations)}`,
 };
 const operationsEnv: Env = {
     ...database,

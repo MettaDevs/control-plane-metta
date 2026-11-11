@@ -23,6 +23,9 @@ const environmentSchema = z.object({
     CONSOLE_SSO_CLIENT_ID: z.string().min(1).optional(),
     CONSOLE_SSO_CLIENT_SECRET: z.string().min(1).optional(),
     CONSOLE_SSO_REDIRECT_URI: z.url().optional(),
+    // Alamat dasar aplikasi klinik (operations-metta), misalnya https://operations.example.com. Konsol dan portal
+    // menurunkan alamat setiap lingkungan darinya; kosong berarti alamat tidak ditampilkan.
+    OPERATIONS_URL: z.url().optional(),
     // Portal klien: alamatnya, dan klien SSO miliknya (terpisah dari klien konsol, karena penyedia mencocokkan alamat
     // balik persis). Konsol memakainya juga untuk meminta penyedia mengirim email undangan, karena penyedia hanya
     // menerima tautan undangan yang host-nya terdaftar di klien itu. Keempatnya diisi bersama, atau dikosongkan bersama.
