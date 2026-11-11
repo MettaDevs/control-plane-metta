@@ -6,6 +6,7 @@ import { ListPageLayout } from '@control-plane-metta/ui/list-page-layout';
 import { RecordActionBar } from '@control-plane-metta/ui/record-action-bar';
 import { useSuspenseQuery } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
+import { useState } from 'react';
 import type { ReactNode } from 'react';
 import {
     definePage,
@@ -17,6 +18,7 @@ import {
     environmentStatus,
     OperationCell,
 } from './environment-labels.tsx';
+import { NewCustomerCard } from './new-customer-card.tsx';
 
 type Customer = ApiOutput<'listCustomers'>['customers'][number];
 type Environment = Customer['environments'][number];
@@ -57,6 +59,7 @@ function hasOpenOperation(customers: Customer[]): boolean {
 
 function CustomersPage(): ReactNode {
     const navigate = useNavigate();
+    const [creating, setCreating] = useState(false);
     const { data: customers } = useSuspenseQuery(
         orpc.listCustomers.queryOptions({
             select: (response) => response.customers,
@@ -73,7 +76,7 @@ function CustomersPage(): ReactNode {
                 <RecordActionBar title="Customer">
                     <ActionButton
                         action="create"
-                        onClick={() => void navigate({ to: '/customers/new' })}
+                        onClick={() => setCreating(true)}
                     />
                 </RecordActionBar>
             }
@@ -163,6 +166,7 @@ function CustomersPage(): ReactNode {
                     },
                 ]}
             />
+            {creating && <NewCustomerCard onClose={() => setCreating(false)} />}
         </ListPageLayout>
     );
 }
