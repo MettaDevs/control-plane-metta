@@ -2,7 +2,6 @@ import { z } from 'zod';
 import { recordAudit } from '../../platform/audit/index.ts';
 import { type Database, sqlErrorCode } from '../../platform/database/index.ts';
 import { HttpFailure } from '../../platform/http/index.ts';
-import { environmentDatabaseName } from '../environment-database.ts';
 
 // Antrean lingkungan, model tarik: konsol meminta, worker operations-metta di host runtime mengambil (claim) satu per
 // satu dengan tenggat, melaporkan langkahnya, lalu menutupnya. Setiap langkah dan penutupan mensyaratkan operasi masih
@@ -18,7 +17,6 @@ export const environmentOperations = [
     'expire',
     'restore',
     'purge',
-    'copy',
 ] as const;
 export type EnvironmentOperation = (typeof environmentOperations)[number];
 
@@ -48,8 +46,8 @@ async function expireStale(db: Database): Promise<void> {
             returning environment_id, operation
          )
          update environments set status = 'degraded', updated_at = ${now}
-         where id in (select environment_id from expired where operation in ('provision', 'migrate', 'copy'))
-           and status in ('provisioning', 'copying', 'active')`,
+         where id in (select environment_id from expired where operation in ('provision', 'migrate'))
+           and status in ('provisioning', 'active')`,
     );
 }
 
@@ -184,7 +182,6 @@ const environmentAfter = {
     expire: { succeeded: null, failed: null, migrates: false },
     restore: { succeeded: null, failed: null, migrates: false },
     purge: { succeeded: null, failed: null, migrates: false },
-    copy: { succeeded: 'active', failed: 'degraded', migrates: true },
 } as const satisfies Record<
     EnvironmentOperation,
     { succeeded: string | null; failed: string | null; migrates: boolean }
@@ -354,11 +351,6 @@ export async function recordStep(
             await db.execute(
                 `update environments set purged_at = ${now}, updated_at = ${now}
                  where id = $1 and deleted_at is not null and purged_at is null and kind <> 'production'`,
-                [held.environment_id],
-            );
-        if (held.operation === 'copy' && status === 'succeeded')
-            await db.execute(
-                `update environments set copied_at = ${now}, updated_at = ${now} where id = $1`,
                 [held.environment_id],
             );
         if (held.operation === 'expire' && status === 'succeeded')
@@ -629,134 +621,5 @@ export async function requestRestore(
             detail: { operation_id: id, operation: 'restore' },
         });
         return { id };
-    });
-}
-
-// Menyalin produksi menjadi sandbox baru milik tenant yang sama. Sandbox lahir di sini lebih dulu, berstatus copying dan
-// terikat ke host yang sama dengan produksinya, karena worker membaca database produksi dari Postgres host itu. Worker
-// menyalin, melucuti efek keluar yang ikut tersalin, memigrasi, memeriksa kesehatan, lalu mencatat alamatnya. Produksi
-// tidak dihentikan: pg_dump membaca satu snapshot konsisten tanpa mengunci apa pun. Sandbox yang penyalinannya gagal
-// (degraded) boleh diminta ulang dari produksi yang sama; sandbox yang sudah hidup tidak pernah ditimpa.
-export async function requestCopy(
-    db: Database,
-    actor: { operatorId: string; ipAddress: string | null },
-    sourceId: string,
-    name: string,
-): Promise<{ id: string; environment_id: string }> {
-    const id = Bun.randomUUIDv7();
-    return db.transaction(async () => {
-        const source = await db.one(
-            z.object({
-                tenant_id: z.string(),
-                tenant_slug: z.string(),
-                kind: z.string(),
-                status: z.string(),
-                hosting: z.string(),
-                database_name: z.string().nullable(),
-                runtime_host_id: z.string().nullable(),
-                busy: z.boolean(),
-            }),
-            `select e.tenant_id, t.slug as tenant_slug, e.kind, e.status, e.hosting, e.database_name, e.runtime_host_id,
-                exists (select 1 from environment_operations o where o.environment_id = e.id
-                        and o.status in ('requested', 'running')) as busy
-             from environments e join tenants t on t.id = e.tenant_id
-             where e.id = $1 and e.deleted_at is null for update of e`,
-            [sourceId],
-        );
-        if (!source)
-            throw new HttpFailure(404, {
-                error: 'environment_not_found',
-                message: 'Lingkungan tidak ditemukan.',
-            });
-        if (source.kind !== 'production' || source.hosting !== 'provider')
-            throw new HttpFailure(409, {
-                error: 'environment_not_copyable',
-                message:
-                    'Hanya produksi yang berjalan di server kita yang bisa disalin menjadi sandbox.',
-            });
-        if (source.status !== 'active' || !source.runtime_host_id)
-            throw new HttpFailure(409, {
-                error: 'environment_not_active',
-                message:
-                    'Produksi ini belum aktif, jadi belum ada yang bisa disalin.',
-            });
-        if (!source.database_name)
-            throw new HttpFailure(409, {
-                error: 'environment_shared_database',
-                message:
-                    'Produksi ini memakai database bersama, yang memuat data tenant lain, jadi tidak bisa disalin menjadi sandbox.',
-            });
-        if (source.busy)
-            throw new HttpFailure(409, {
-                error: 'operation_pending',
-                message:
-                    'Produksi ini masih punya operasi yang belum selesai. Salin setelah operasi itu selesai.',
-            });
-        const existing = await db.one(
-            z.object({
-                id: z.string(),
-                status: z.string(),
-                source_environment_id: z.string().nullable(),
-                database_name: z.string().nullable(),
-            }),
-            `select id, status, source_environment_id, database_name from environments
-             where tenant_id = $1 and kind = 'sandbox' and deleted_at is null for update`,
-            [source.tenant_id],
-        );
-        if (
-            existing &&
-            !(
-                existing.status === 'degraded' &&
-                existing.source_environment_id === sourceId
-            )
-        )
-            throw new HttpFailure(409, {
-                error: 'sandbox_exists',
-                message:
-                    'Tenant ini sudah punya sandbox. Satu tenant hanya punya satu sandbox, dan sandbox yang sudah aktif tidak ditimpa salinan baru.',
-            });
-        const sandboxId = existing?.id ?? Bun.randomUUIDv7();
-        const database =
-            existing?.database_name ??
-            environmentDatabaseName(source.tenant_slug, 'sandbox', sandboxId);
-        if (existing)
-            await db.execute(
-                `update environments set status = 'copying', name = $2, updated_at = ${now} where id = $1`,
-                [sandboxId, name],
-            );
-        else
-            await db.execute(
-                `insert into environments (id, tenant_id, kind, name, slug, database_name, status, source_environment_id,
-                    outbound_allowed, hosting, runtime_host_id, created_by, created_at, updated_at)
-                 values ($1, $2, 'sandbox', $3, 'sandbox', $4, 'copying', $5, false, 'provider', $6, $7, ${now}, ${now})`,
-                [
-                    sandboxId,
-                    source.tenant_id,
-                    name,
-                    database,
-                    sourceId,
-                    source.runtime_host_id,
-                    actor.operatorId,
-                ],
-            );
-        await insertOperation(db, id, sandboxId, 'copy', actor, {
-            tenant_id: source.tenant_id,
-            tenant_slug: source.tenant_slug,
-            name,
-            source_database: source.database_name,
-            database,
-        });
-        await recordAudit(db, {
-            ...actor,
-            action: 'environment.operation.requested',
-            subjectType: 'environment',
-            subjectId: sandboxId,
-            detail: {
-                operation_id: id,
-                operation: 'copy',
-                source_environment_id: sourceId,
-            },
-        });
-        return { id, environment_id: sandboxId };
     });
 }

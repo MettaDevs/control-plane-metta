@@ -18,7 +18,6 @@ import {
     DialogTitle,
 } from '@control-plane-metta/ui/dialog';
 import { FormControl } from '@control-plane-metta/ui/form-control';
-import { Input } from '@control-plane-metta/ui/input';
 import { RecordActionBar } from '@control-plane-metta/ui/record-action-bar';
 import { useConfirmation } from '@control-plane-metta/ui/use-confirmation';
 import {
@@ -210,96 +209,12 @@ function RestoreDialog({
     );
 }
 
-// Produksi disalin menjadi sandbox baru; operator memberi nama sandbox itu. Produksi tidak berhenti selama disalin.
-function CopyDialog({
-    environment,
-    open,
-    onOpenChange,
-}: {
-    environment: Environment;
-    open: boolean;
-    onOpenChange: (open: boolean) => void;
-}): ReactNode {
-    const queryClient = useQueryClient();
-    const [name, setName] = useState('Sandbox');
-    const [error, setError] = useState<string | null>(null);
-    const copy = useMutation(
-        orpc.requestEnvironmentOperation.mutationOptions({
-            onMutate: () => setError(null),
-            onSuccess: async () => {
-                toast.success('Salinan ke sandbox menunggu diambil worker.');
-                onOpenChange(false);
-                await queryClient.invalidateQueries({
-                    queryKey: orpc.showCustomer.key(),
-                });
-            },
-            onError: (caught) =>
-                setError(errorText(caught, 'Salinan belum diminta.')),
-        }),
-    );
-    return (
-        <Dialog
-            open={open}
-            onOpenChange={(next) => {
-                if (!next) setError(null);
-                onOpenChange(next);
-            }}
-        >
-            <DialogContent size="compact">
-                <form
-                    className="contents"
-                    onSubmit={(event) => {
-                        event.preventDefault();
-                        copy.mutate({
-                            params: { environment: environment.id },
-                            body: { operation: 'copy', name },
-                        });
-                    }}
-                >
-                    <DialogHeader>
-                        <DialogTitle>Salin produksi ke sandbox?</DialogTitle>
-                        <DialogDescription>
-                            Seluruh data produksi saat ini disalin ke sandbox
-                            baru milik klinik yang sama. Produksi tetap berjalan
-                            selama disalin. Di sandbox, antrean pengiriman,
-                            ekspor laporan, dan sesi login dari produksi
-                            dibuang, jadi tidak ada yang terkirim keluar dari
-                            salinan ini.
-                        </DialogDescription>
-                    </DialogHeader>
-                    <DialogBody className="flex flex-col gap-3">
-                        <FormControl error={error ?? undefined}>
-                            <Input
-                                label="Nama sandbox"
-                                required
-                                maxLength={100}
-                                value={name}
-                                onChange={(event) =>
-                                    setName(event.target.value)
-                                }
-                            />
-                        </FormControl>
-                    </DialogBody>
-                    <DialogFooter>
-                        <DialogAction type="submit" disabled={copy.isPending}>
-                            {copy.isPending ? 'Meminta…' : 'Salin ke sandbox'}
-                        </DialogAction>
-                        <DialogCancel />
-                    </DialogFooter>
-                </form>
-            </DialogContent>
-        </Dialog>
-    );
-}
-
 function EnvironmentSection({
     environment,
     tenantHasProduction,
-    tenantSandbox,
 }: {
     environment: Environment;
     tenantHasProduction: boolean;
-    tenantSandbox: Environment | undefined;
 }): ReactNode {
     const status = environmentStatus(environment.status);
     const queryClient = useQueryClient();
@@ -341,16 +256,6 @@ function EnvironmentSection({
               ? 'Tenant ini sudah punya produksi.'
               : busyReason;
     const [restoreOpen, setRestoreOpen] = useState(false);
-    const [copyOpen, setCopyOpen] = useState(false);
-    // Sandbox yang penyalinannya gagal boleh disalin ulang; sandbox yang hidup tidak pernah ditimpa.
-    const copyUnavailable =
-        environment.status !== 'active'
-            ? 'Produksi ini belum aktif.'
-            : !environment.database_name
-              ? 'Produksi ini memakai database bersama.'
-              : tenantSandbox && tenantSandbox.status !== 'degraded'
-                ? 'Tenant ini sudah punya sandbox.'
-                : busyReason;
     const graceOver =
         environment.purge_after !== null &&
         new Date(environment.purge_after) <= new Date();
@@ -389,20 +294,6 @@ function EnvironmentSection({
                 )}
                 {environment.status !== 'soft_deleted' && (
                     <div className="ml-auto flex flex-wrap gap-2">
-                        {environment.kind === 'production' && (
-                            <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                disabled={copyUnavailable !== null}
-                                title={copyUnavailable ?? undefined}
-                                onClick={() => setCopyOpen(true)}
-                            >
-                                {tenantSandbox?.status === 'degraded'
-                                    ? 'Salin ulang ke sandbox'
-                                    : 'Salin ke sandbox'}
-                            </Button>
-                        )}
                         {environment.kind === 'demo' && (
                             <Button
                                 type="button"
@@ -535,13 +426,6 @@ function EnvironmentSection({
                 ]}
             />
             {confirmation}
-            {copyOpen && (
-                <CopyDialog
-                    environment={environment}
-                    open={copyOpen}
-                    onOpenChange={setCopyOpen}
-                />
-            )}
             {restoreOpen && (
                 <RestoreDialog
                     environment={environment}
@@ -591,11 +475,6 @@ function CustomerPage(): ReactNode {
                                 <EnvironmentSection
                                     key={environment.id}
                                     environment={environment}
-                                    tenantSandbox={tenant.environments.find(
-                                        (other) =>
-                                            other.kind === 'sandbox' &&
-                                            other.status !== 'soft_deleted',
-                                    )}
                                     tenantHasProduction={tenant.environments.some(
                                         (other) => other.kind === 'production',
                                     )}
