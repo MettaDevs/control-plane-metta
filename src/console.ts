@@ -25,7 +25,7 @@ export function consoleRouter(config: Config) {
         ...operatorIdentityRoutes(config, session),
         ...siteConsoleRoutes(config, session),
         ...releaseConsoleRoutes(session),
-        ...customerConsoleRoutes(session),
+        ...customerConsoleRoutes(config, session),
         ...entitlementConsoleRoutes(session),
         ...packageConsoleRoutes(session),
         ...portalAccessConsoleRoutes(config, session),

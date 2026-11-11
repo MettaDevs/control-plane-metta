@@ -105,6 +105,29 @@ function CreatedPanel({
                     </AlertDescription>
                 </Alert>
             )}
+            {created.portal_invitation &&
+                (created.portal_invitation.email_failure === null ? (
+                    <p className="text-sm">
+                        Undangan portal klien juga dikirim ke{' '}
+                        {created.admin_email}.
+                    </p>
+                ) : (
+                    <Alert>
+                        <TriangleAlert />
+                        <AlertTitle>
+                            Email undangan portal belum terkirim.
+                        </AlertTitle>
+                        <AlertDescription>
+                            {created.portal_invitation.email_failure} Kirim
+                            ulang dari bagian Akses portal di detail customer,
+                            atau kirim tautan ini sendiri lewat jalur pribadi.
+                            Tautan ini tidak akan ditampilkan lagi.
+                            <code className="mt-2 block rounded-md border bg-muted px-3 py-2 font-mono text-xs break-all select-all">
+                                {created.portal_invitation.accept_url}
+                            </code>
+                        </AlertDescription>
+                    </Alert>
+                ))}
             <p className="text-sm text-muted-foreground">
                 Lingkungan pertamanya sedang menunggu disiapkan. Statusnya
                 terlihat di daftar customer.

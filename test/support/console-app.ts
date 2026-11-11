@@ -6,11 +6,15 @@ import { consoleRouter } from '../../src/console.ts';
 // Router proses konsol di atas database test, dipanggil seperti browser memanggil konsol: lewat Request sungguhan,
 // dengan cookie dan alamat IP. Setiap pemanggilan memakai alamat IP sendiri, supaya pembatas percobaan tidak
 // terbawa antar-berkas test.
-export function consoleTestApp(key: number) {
+export function consoleTestApp(
+    key: number,
+    environment: Record<string, string> = {},
+) {
     const config = loadConfig({
         ...process.env,
         APP_KEY: 'base64:' + Buffer.alloc(32, key).toString('base64'),
         SESSION_SECURE_COOKIE: 'false',
+        ...environment,
     });
     const application = createApplication(config, consoleRouter(config));
     const pool = createPool(config);
