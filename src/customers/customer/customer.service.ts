@@ -1,6 +1,9 @@
 import { createHash, randomInt } from 'node:crypto';
 import { z } from 'zod';
-import { placeEnvironment } from '../../environments/index.ts';
+import {
+    desiredEntitlements,
+    placeEnvironment,
+} from '../../environments/index.ts';
 import { recordAudit } from '../../platform/audit/index.ts';
 import { type Database, sqlErrorCode } from '../../platform/database/index.ts';
 import { HttpFailure } from '../../platform/http/index.ts';
@@ -290,6 +293,7 @@ const operationNameSchema = z.enum([
     'expire',
     'restore',
     'purge',
+    'sync_entitlements',
 ]);
 const operationStatusSchema = z.enum([
     'requested',
@@ -355,6 +359,15 @@ const customerDetailSchema = z.object({
             id: z.string(),
             name: z.string(),
             slug: z.string(),
+            // Hak memakai module yang masih hidup. Dicabut tidak tampil.
+            entitlements: z.array(
+                z.object({
+                    id: z.string(),
+                    module_id: z.string(),
+                    module_name: z.string(),
+                    ends_on: z.string().nullable(),
+                }),
+            ),
             environments: z.array(
                 z.object({
                     id: z.string(),
@@ -377,6 +390,8 @@ const customerDetailSchema = z.object({
                     reported_healthy: z.boolean().nullable(),
                     reported_problem: z.string().nullable(),
                     reported_at: z.string().nullable(),
+                    // Hak module tenant sudah diterapkan di database lingkungan ini.
+                    entitlements_applied: z.boolean(),
                     operations: z.array(
                         z.object({
                             id: z.string(),
@@ -405,6 +420,11 @@ export async function findCustomer(db: Database, clientId: string) {
         `select c.id as client_id, c.legal_name, c.slug, ${iso('c.created_at')} as created_at,
             coalesce((select json_agg(json_build_object(
                 'id', t.id, 'name', t.name, 'slug', t.slug,
+                'entitlements', coalesce((select json_agg(json_build_object(
+                    'id', m.id, 'module_id', m.module_id, 'module_name', cm.name,
+                    'ends_on', to_char(m.ends_on, 'YYYY-MM-DD')) order by cm.name, m.module_id)
+                    from tenant_module_entitlements m join catalog_modules cm on cm.id = m.module_id
+                    where m.tenant_id = t.id and m.deleted_at is null), '[]'),
                 'environments', coalesce((select json_agg(json_build_object(
                     'id', e.id, 'kind', e.kind, 'name', e.name, 'status', e.status,
                     'database_name', e.database_name, 'runtime_host', h.name,
@@ -414,6 +434,7 @@ export async function findCustomer(db: Database, clientId: string) {
                     'reported_migrations', e.reported_migrations, 'reported_size_bytes', e.reported_size_bytes,
                     'reported_healthy', e.reported_healthy, 'reported_problem', e.reported_problem,
                     'reported_at', ${iso('e.reported_at')},
+                    'entitlements_applied', coalesce(e.applied_entitlements, '[]'::jsonb) = ${desiredEntitlements},
                     'operations', coalesce((select json_agg(json_build_object(
                         'id', o.id, 'operation', o.operation, 'status', o.status, 'step', o.step,
                         'failure_message', o.failure_message, 'requested_by', op.name,

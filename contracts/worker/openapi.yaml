@@ -41,6 +41,11 @@ info:
       sejam yang lalu: `expire` untuk demo yang tanggal berakhirnya lewat, `purge` untuk lingkungan bukan produksi
       yang dihapus lunak dan masa tenggangnya habis. Claim membawa `restore` dan `purge` walaupun lingkungannya sedang
       dihapus.
+    - Operasi `sync_entitlements` juga tidak diminta operator. Ia diantrekan untuk lingkungan `active` yang hak module
+      tenant-nya berbeda dari yang terakhir berhasil diterapkan di sana, termasuk lingkungan yang baru selesai
+      disiapkan. Penutupan `succeeded` mencatat `parameters.modules` sebagai yang sudah diterapkan; status lingkungan
+      tidak berubah apa pun hasilnya. Operasi `sync_entitlements` yang sukses tidak menahan antrean berikutnya; yang
+      gagal ditahan sejam seperti `expire`.
 
     ## Operasi
 
@@ -63,9 +68,14 @@ info:
     - `purge`: membuang database lingkungan secara permanen (`DROP DATABASE ... WITH (FORCE)`). Alamatnya tetap
       tercatat nonaktif sebagai nisan. Worker menolak membuang database yang masih ditunjuk alamat aktif. Database null
       (database bersama runtime) tidak pernah dibuang. Parameternya `PurgeParameters`.
+    - `sync_entitlements`: menyamakan hak module tenant di database lingkungan dengan `modules`. Module di daftar
+      dipasang bila belum (migration module, catatan pemasangan, duty untuk role pemilik) dan hak pakainya diberi
+      tanggal berakhir `ends_on` (hari terakhir boleh dipakai; null berarti tanpa batas). Hak module yang tidak ada di
+      daftar dicabut. Data yang dibuat dengan module itu tidak disentuh. Parameternya `SyncEntitlementsParameters`.
     ## Laporan host
 
-    Worker melapor setiap beberapa menit, dan sekali saat mulai, lewat `POST /report`: rilis image yang ia jalankan, dan
+    Worker melapor setiap beberapa menit, dan sekali saat mulai, lewat `POST /report`: rilis image yang ia jalankan,
+    module yang dibawa image itu (`modules`, sumber katalog module di konsol), dan
     untuk setiap alamat lingkungan yang tercatat di runtime-nya: migration terakhir per pemilik, ukuran database, dan
     sehat atau tidak beserta sebabnya. Control plane menyimpan laporan terakhir saja. Lingkungan dicocokkan hanya di
     antara milik host itu, lewat nama database, atau lewat slug tenant dan jenis untuk database bersama; alamat yang
@@ -241,7 +251,7 @@ components:
           format: uuid
         operation:
           type: string
-          enum: [provision, migrate, convert, expire, restore, purge]
+          enum: [provision, migrate, convert, expire, restore, purge, sync_entitlements]
         environment_id:
           type: string
           format: uuid
@@ -249,7 +259,7 @@ components:
           type: string
           format: date-time
         parameters:
-          description: '`ProvisionParameters` untuk `provision`, `MigrateParameters` untuk `migrate`, `ConvertParameters` untuk `convert`, `ExpireParameters` untuk `expire`, `RestoreParameters` untuk `restore`, `PurgeParameters` untuk `purge`.'
+          description: '`ProvisionParameters` untuk `provision`, `MigrateParameters` untuk `migrate`, `ConvertParameters` untuk `convert`, `ExpireParameters` untuk `expire`, `RestoreParameters` untuk `restore`, `PurgeParameters` untuk `purge`, `SyncEntitlementsParameters` untuk `sync_entitlements`.'
           oneOf:
             - $ref: '#/components/schemas/ProvisionParameters'
             - $ref: '#/components/schemas/MigrateParameters'
@@ -257,6 +267,7 @@ components:
             - $ref: '#/components/schemas/ExpireParameters'
             - $ref: '#/components/schemas/RestoreParameters'
             - $ref: '#/components/schemas/PurgeParameters'
+            - $ref: '#/components/schemas/SyncEntitlementsParameters'
     ProvisionParameters:
       description: |
         Permintaan penyiapan operations-metta (`provisionRequestSchema` di `src/platform/environment/` repo itu),
@@ -362,6 +373,32 @@ components:
           description: Database lingkungan; null berarti database bersama runtime, yang tidak pernah dibuang.
           type: [string, 'null']
           pattern: '^[a-z][a-z0-9_]{0,62}$'
+    SyncEntitlementsParameters:
+      type: object
+      additionalProperties: false
+      required: [tenant_id, database, modules]
+      properties:
+        tenant_id:
+          type: string
+          format: uuid
+        database:
+          description: Database lingkungan; null berarti database bersama runtime.
+          type: [string, 'null']
+          pattern: '^[a-z][a-z0-9_]{0,62}$'
+        modules:
+          description: Seluruh hak module tenant yang masih hidup, urut `module_id`. Daftar kosong mencabut semuanya.
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [module_id, ends_on]
+            properties:
+              module_id:
+                type: string
+              ends_on:
+                description: Hari terakhir module boleh dipakai; null berarti tanpa batas.
+                type: [string, 'null']
+                format: date
     HostReport:
       type: object
       additionalProperties: false
@@ -372,6 +409,27 @@ components:
           type: string
           minLength: 1
           maxLength: 80
+        modules:
+          description: |
+            Module yang dibawa image host ini dan boleh dijual. Opsional bagi worker lama; laporan tanpa daftar ini tidak
+            mengubah katalog.
+          type: array
+          maxItems: 500
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, name, description]
+            properties:
+              id:
+                type: string
+                pattern: '^[a-z][a-z0-9-]{0,79}$'
+              name:
+                type: string
+                minLength: 1
+                maxLength: 150
+              description:
+                type: [string, 'null']
+                maxLength: 1000
         environments:
           type: array
           maxItems: 5000

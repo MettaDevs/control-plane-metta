@@ -42,6 +42,7 @@ import {
     OperationCell,
     operationName,
 } from './environment-labels.tsx';
+import { ModuleEntitlements } from './module-entitlements.tsx';
 
 type Customer = ApiOutput<'showCustomer'>['customer'];
 type Environment = Customer['tenants'][number]['environments'][number];
@@ -62,12 +63,16 @@ function displayTime(value: string | null): string {
     }).format(new Date(value));
 }
 
+// Hak module yang belum diterapkan di lingkungan aktif juga ditunggu: worker akan mengambilnya tanpa diminta.
 function hasOpenOperation(customer: Customer): boolean {
     return customer.tenants.some((tenant) =>
-        tenant.environments.some((environment) =>
-            environment.operations.some((operation) =>
-                openStatuses.has(operation.status),
-            ),
+        tenant.environments.some(
+            (environment) =>
+                (environment.status === 'active' &&
+                    !environment.entitlements_applied) ||
+                environment.operations.some((operation) =>
+                    openStatuses.has(operation.status),
+                ),
         ),
     );
 }
@@ -399,6 +404,13 @@ function EnvironmentSection({
                 <Fact label="Ukuran database">
                     {displaySize(environment.reported_size_bytes)}
                 </Fact>
+                <Fact label="Module">
+                    {environment.entitlements_applied
+                        ? 'Sesuai hak tenant'
+                        : environment.status === 'active'
+                          ? 'Menunggu diterapkan'
+                          : 'Diterapkan setelah lingkungan aktif'}
+                </Fact>
             </dl>
             <DataTable
                 data={environment.operations}
@@ -514,6 +526,7 @@ function CustomerPage(): ReactNode {
                                 </span>
                             </h2>
                         )}
+                        <ModuleEntitlements tenant={tenant} />
                         {tenant.environments.length ? (
                             tenant.environments.map((environment) => (
                                 <EnvironmentSection

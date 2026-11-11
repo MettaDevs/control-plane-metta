@@ -1,3 +1,4 @@
+export { desiredEntitlements } from './operation/environment-operation.service.ts';
 export {
     placeEnvironment,
     reportStaleMinutes,

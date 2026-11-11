@@ -246,6 +246,49 @@
             }
         }
     },
+    "listModuleCatalog": {
+        "~orpc": {
+            "errorMap": {},
+            "meta": {},
+            "route": { "method": "GET", "path": "/api/v1/catalog/modules" }
+        }
+    },
+    "grantEntitlement": {
+        "~orpc": {
+            "errorMap": {},
+            "meta": {},
+            "route": {
+                "method": "POST",
+                "path": "/api/v1/tenants/{tenant}/entitlements",
+                "inputStructure": "detailed",
+                "successStatus": 201
+            }
+        }
+    },
+    "changeEntitlement": {
+        "~orpc": {
+            "errorMap": {},
+            "meta": {},
+            "route": {
+                "method": "PUT",
+                "path": "/api/v1/entitlements/{entitlement}",
+                "inputStructure": "detailed",
+                "successStatus": 204
+            }
+        }
+    },
+    "revokeEntitlement": {
+        "~orpc": {
+            "errorMap": {},
+            "meta": {},
+            "route": {
+                "method": "POST",
+                "path": "/api/v1/entitlements/{entitlement}/revoke",
+                "inputStructure": "detailed",
+                "successStatus": 204
+            }
+        }
+    },
     "listRuntimeHosts": {
         "~orpc": {
             "errorMap": {},

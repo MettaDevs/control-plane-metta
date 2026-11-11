@@ -5,6 +5,18 @@ const now = "now() at time zone 'utc'";
 
 export const hostReportSchema = z.strictObject({
     release: z.string().min(1).max(80),
+    // Module yang dibawa image host ini. Opsional supaya worker lama yang belum mengirimnya tetap diterima; laporan
+    // tanpa daftar ini tidak mengubah katalog maupun module host yang tercatat.
+    modules: z
+        .array(
+            z.strictObject({
+                id: z.string().regex(/^[a-z][a-z0-9-]{0,79}$/),
+                name: z.string().min(1).max(150),
+                description: z.string().max(1000).nullable(),
+            }),
+        )
+        .max(500)
+        .optional(),
     environments: z
         .array(
             z.strictObject({
@@ -35,6 +47,25 @@ export async function recordHostReport(
             `update runtime_hosts set reported_release = $2, reported_at = ${now} where id = $1`,
             [hostId, report.release],
         );
+        if (report.modules) {
+            // Nama dan deskripsi mengikuti laporan terakhir; module yang tidak lagi dilaporkan host mana pun tetap di
+            // katalog, karena entitlement yang sudah ada masih menunjuknya.
+            for (const module of report.modules)
+                await db.execute(
+                    `insert into catalog_modules (id, name, description, first_reported_at, last_reported_at)
+                     values ($1, $2, $3, ${now}, ${now})
+                     on conflict (id) do update set name = excluded.name, description = excluded.description,
+                         last_reported_at = excluded.last_reported_at`,
+                    [module.id, module.name, module.description],
+                );
+            await db.execute(
+                'update runtime_hosts set reported_modules = $2::text::jsonb where id = $1',
+                [
+                    hostId,
+                    JSON.stringify(report.modules.map((module) => module.id)),
+                ],
+            );
+        }
         let matched = 0;
         for (const environment of report.environments) {
             const updated = await db.execute(
