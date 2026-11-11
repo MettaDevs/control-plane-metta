@@ -390,7 +390,9 @@ function EnvironmentSection({
                 <Fact label="Berakhir">
                     {environment.expires_at
                         ? displayDate(environment.expires_at)
-                        : '-'}
+                        : environment.kind === 'demo'
+                          ? 'Tanpa batas'
+                          : '-'}
                 </Fact>
                 {environment.purge_after && (
                     <Fact label="Isinya dibuang setelah">

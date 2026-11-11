@@ -239,7 +239,10 @@ export function NewCustomerCard({
                                     },
                                     environment:
                                         kind === 'demo'
-                                            ? { kind, expires_at: expiresAt }
+                                            ? {
+                                                  kind,
+                                                  expires_at: expiresAt || null,
+                                              }
                                             : { kind },
                                     ...(runtimeHostId
                                         ? { runtime_host_id: runtimeHostId }
@@ -270,7 +273,7 @@ export function NewCustomerCard({
                             <FormGrid>
                                 <FormControl error={error('legal_name')}>
                                     <Input
-                                        label="Nama badan usaha"
+                                        label="Tenant"
                                         required
                                         autoFocus
                                         maxLength={255}
@@ -397,10 +400,10 @@ export function NewCustomerCard({
                                 {kind === 'demo' && (
                                     <FormControl
                                         error={error('environment.expires_at')}
+                                        hint="Kosongkan bila demo ini tidak punya batas waktu."
                                     >
                                         <DatePicker
                                             label="Demo berakhir"
-                                            required
                                             min={tomorrow()}
                                             data-error-field="environment.expires_at"
                                             value={expiresAt}

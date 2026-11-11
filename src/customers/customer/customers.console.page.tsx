@@ -98,7 +98,7 @@ function CustomersPage(): ReactNode {
                 columns={[
                     {
                         id: 'legal_name',
-                        header: 'Nama badan usaha',
+                        header: 'Tenant',
                         cell: (row) => (
                             <DataTableText>
                                 {row.customer.legal_name}

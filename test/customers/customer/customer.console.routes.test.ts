@@ -190,7 +190,7 @@ describe.skipIf(!process.env.DB_HOST)('customer console', () => {
         });
     });
 
-    test('demo membawa tanggal berakhir dari operator dan tidak boleh mengirim keluar', async () => {
+    test('demo membawa tanggal berakhir dari operator atau tanpa batas, dan tidak boleh mengirim keluar', async () => {
         const result = created.parse(
             await (
                 await create(
@@ -208,9 +208,15 @@ describe.skipIf(!process.env.DB_HOST)('customer console', () => {
             outbound_allowed: false,
             expires_at: '2026-12-31',
         });
-        expect((await create(body(slug(), { kind: 'demo' }))).status).not.toBe(
-            201,
+        // Tanpa tanggal berakhir: demo tanpa batas waktu.
+        const unlimited = created.parse(
+            await (await create(body(slug(), { kind: 'demo' }))).json(),
         );
+        const [open] = await pool.unsafe(
+            'select kind, expires_at from environments where id = $1',
+            [unlimited.environment_id],
+        );
+        expect({ ...open }).toEqual({ kind: 'demo', expires_at: null });
     });
 
     test('slug yang sudah dipakai, slug cadangan, dan tanpa kunci permintaan ditolak tanpa menulis apa pun', async () => {
@@ -257,13 +263,12 @@ describe.skipIf(!process.env.DB_HOST)('customer console', () => {
             .object({ errors: z.record(z.string(), z.array(z.string())) })
             .parse(await empty.json());
         expect(errors).toEqual({
-            legal_name: ['Isi nama badan usaha.'],
+            legal_name: ['Isi nama tenant.'],
             slug: [
                 'Slug berisi huruf kecil, angka, dan tanda hubung, paling panjang 63.',
             ],
             'admin.name': ['Isi nama admin.'],
             'admin.email': ['Isi alamat email yang benar.'],
-            'environment.expires_at': ['Isi tanggal berakhir demo.'],
         });
 
         const nothing = await create({});
