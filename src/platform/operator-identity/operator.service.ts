@@ -17,7 +17,9 @@ const credentialSchema = operatorSchema.extend({
 export const newOperatorSchema = z.object({
     name: z.string().trim().min(1).max(255),
     email: z.email().max(255),
-    password: z.string().min(12).max(1024),
+    // Tanpa batas panjang minimum: password operator hanya jembatan sampai login konsol sepenuhnya lewat SSO
+    // (keputusan pemilik produk, 11 November 2026).
+    password: z.string().min(1).max(1024),
 });
 
 // Hash pembanding untuk email yang tidak terdaftar, supaya waktu jawabnya sama dengan password yang salah.
