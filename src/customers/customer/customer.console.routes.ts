@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { Config } from '../../platform/config/index.ts';
+import { environmentAddress } from '../../environments/index.ts';
 import { HttpFailure } from '../../platform/http/index.ts';
 import type { ConsoleSession } from '../../platform/operator-identity/index.console.ts';
 import {
@@ -33,9 +34,30 @@ export function customerConsoleRoutes(config: Config, session: ConsoleSession) {
                 inputStructure: 'detailed',
             })
             .input(z.object({ params: z.object({ client: z.uuid() }) }))
-            .handler(async ({ context, input }) => ({
-                customer: await findCustomer(context.db, input.params.client),
-            })),
+            .handler(async ({ context, input }) => {
+                const customer = await findCustomer(
+                    context.db,
+                    input.params.client,
+                );
+                return {
+                    customer: {
+                        ...customer,
+                        tenants: customer.tenants.map((tenant) => ({
+                            ...tenant,
+                            environments: tenant.environments.map(
+                                (environment) => ({
+                                    ...environment,
+                                    address: environmentAddress(
+                                        config.OPERATIONS_URL,
+                                        tenant.slug,
+                                        environment.kind,
+                                    ),
+                                }),
+                            ),
+                        })),
+                    },
+                };
+            }),
         // Header Idempotency-Key wajib: konsol yang mengulang permintaan karena jawaban hilang tidak membuat customer
         // kedua, dan password sementara hanya tampil di jawaban pertama.
         createCustomer: operatorProcedure

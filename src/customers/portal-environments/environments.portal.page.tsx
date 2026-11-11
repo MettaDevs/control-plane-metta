@@ -133,6 +133,27 @@ function EnvironmentsPage(): ReactNode {
                         },
                     },
                     {
+                        id: 'address',
+                        header: 'Alamat',
+                        cell: (row) =>
+                            row.environment.address ? (
+                                <a
+                                    href={row.environment.address}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-sm text-primary underline-offset-4 hover:underline"
+                                >
+                                    {row.environment.address.replace(
+                                        /^https?:\/\//,
+                                        '',
+                                    )}
+                                </a>
+                            ) : (
+                                <DataTableText>-</DataTableText>
+                            ),
+                        minWidth: 240,
+                    },
+                    {
                         id: 'expires_at',
                         header: 'Berlaku sampai',
                         cell: (row) => (

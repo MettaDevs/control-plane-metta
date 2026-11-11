@@ -381,6 +381,20 @@ function EnvironmentSection({
                 )}
             </div>
             <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                <Fact label="Alamat">
+                    {environment.address ? (
+                        <a
+                            href={environment.address}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-primary underline-offset-4 hover:underline"
+                        >
+                            {environment.address.replace(/^https?:\/\//, '')}
+                        </a>
+                    ) : (
+                        '-'
+                    )}
+                </Fact>
                 <Fact label="Database">{environment.database_name ?? '-'}</Fact>
                 <Fact label="Host runtime">
                     {environment.runtime_host ?? 'Belum diambil worker'}
