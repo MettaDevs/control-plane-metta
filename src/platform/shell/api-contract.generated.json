@@ -344,6 +344,64 @@
             }
         }
     },
+    "listPortalAccess": {
+        "~orpc": {
+            "errorMap": {},
+            "meta": {},
+            "route": {
+                "method": "GET",
+                "path": "/api/v1/customers/{client}/portal-access",
+                "inputStructure": "detailed"
+            }
+        }
+    },
+    "inviteToPortal": {
+        "~orpc": {
+            "errorMap": {},
+            "meta": {},
+            "route": {
+                "method": "POST",
+                "path": "/api/v1/customers/{client}/portal-invitations",
+                "inputStructure": "detailed",
+                "successStatus": 201
+            }
+        }
+    },
+    "resendPortalInvitation": {
+        "~orpc": {
+            "errorMap": {},
+            "meta": {},
+            "route": {
+                "method": "POST",
+                "path": "/api/v1/portal-invitations/{invitation}/resend",
+                "inputStructure": "detailed"
+            }
+        }
+    },
+    "cancelPortalInvitation": {
+        "~orpc": {
+            "errorMap": {},
+            "meta": {},
+            "route": {
+                "method": "DELETE",
+                "path": "/api/v1/portal-invitations/{invitation}",
+                "inputStructure": "detailed",
+                "successStatus": 204
+            }
+        }
+    },
+    "revokePortalUser": {
+        "~orpc": {
+            "errorMap": {},
+            "meta": {},
+            "route": {
+                "method": "DELETE",
+                "path": "/api/v1/portal-users/{user}",
+                "inputStructure": "detailed",
+                "successStatus": 204
+            }
+        }
+    },
     "listRuntimeHosts": {
         "~orpc": {
             "errorMap": {},

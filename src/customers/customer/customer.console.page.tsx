@@ -43,6 +43,7 @@ import {
     operationName,
 } from './environment-labels.tsx';
 import { ModuleEntitlements } from './module-entitlements.tsx';
+import { PortalAccessSection } from './portal-access-section.tsx';
 
 type Customer = ApiOutput<'showCustomer'>['customer'];
 type Environment = Customer['tenants'][number]['environments'][number];
@@ -520,6 +521,7 @@ function CustomerPage(): ReactNode {
                         {displayTime(customer.created_at)}
                     </Fact>
                 </dl>
+                <PortalAccessSection clientId={customer.client_id} />
                 {customer.tenants.map((tenant) => (
                     <div key={tenant.id} className="flex flex-col gap-3">
                         {customer.tenants.length > 1 && (
