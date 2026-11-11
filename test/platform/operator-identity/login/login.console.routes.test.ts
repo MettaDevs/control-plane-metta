@@ -46,6 +46,7 @@ describe.skipIf(!process.env.DB_HOST)('operator login', () => {
         expect(await me.json()).toEqual({
             operator,
             two_factor_enabled: false,
+            sso: null,
         });
 
         const logout = await call('/logout', {

@@ -9,20 +9,26 @@ import { SidebarTrigger } from '@control-plane-metta/ui/sidebar';
 import { cn } from '@control-plane-metta/ui/utils';
 import { Link } from '@tanstack/react-router';
 import { House, Moon, Sun } from 'lucide-react';
+import { useState } from 'react';
 import type { Operator } from './api.ts';
 import { homePath } from './navigation.ts';
 import { useAppearance } from './use-appearance.ts';
+import { SsoLinkDialog, useSsoLinkNotice } from './sso-link.tsx';
 import { initials, UserMenuContent } from './user-menu.tsx';
 
 // Header bingkai, disalin dari operations-metta tanpa pencarian halaman dan pemilih ruang kerja: konsol baru punya dua
 // halaman dan tidak punya ruang kerja. Tautan beranda memakai ikon umum, bukan logo merek.
 export function AppSidebarHeader({
     operator,
+    sso,
     isScrolled = false,
 }: {
     operator: Operator;
+    sso: { linked: boolean } | null;
     isScrolled?: boolean;
 }) {
+    const [linking, setLinking] = useState(false);
+    useSsoLinkNotice();
     const { resolvedAppearance, updateAppearance } = useAppearance();
     const themeLabel =
         resolvedAppearance === 'dark'
@@ -81,11 +87,16 @@ export function AppSidebarHeader({
                             className="min-w-56 rounded-lg"
                             align="end"
                         >
-                            <UserMenuContent operator={operator} />
+                            <UserMenuContent
+                                operator={operator}
+                                sso={sso}
+                                onLinkSso={() => setLinking(true)}
+                            />
                         </DropdownMenuContent>
                     </DropdownMenu>
                 </div>
             </div>
+            {linking && <SsoLinkDialog onOpenChange={setLinking} />}
         </header>
     );
 }

@@ -40,6 +40,7 @@ export function AppLayout(): ReactNode {
                 <div className="flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden rounded-2xl border bg-background shadow-sm">
                     <AppSidebarHeader
                         operator={me.operator}
+                        sso={me.sso}
                         isScrolled={isScrolled}
                     />
                     <div

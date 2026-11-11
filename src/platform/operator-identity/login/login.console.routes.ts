@@ -10,6 +10,7 @@ import {
     guardAttempts,
     twoFactorWindowSeconds,
 } from '../session.console.ts';
+import { isLinked } from '../sso/sso.service.ts';
 
 const loginInput = z.object({
     body: z.object({ email: z.string(), password: z.string() }),
@@ -80,6 +81,16 @@ export function loginRoutes(config: Config, session: ConsoleSession) {
                     context.db,
                     context.operator.id,
                 ),
+                // null bila SSO konsol tidak disetel; selain itu, apakah operator ini sudah menautkan akun SSO-nya.
+                sso: config.sso
+                    ? {
+                          linked: await isLinked(
+                              context.db,
+                              context.operator.id,
+                              config.sso.issuer,
+                          ),
+                      }
+                    : null,
             })),
     };
 }

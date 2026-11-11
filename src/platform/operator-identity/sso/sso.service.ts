@@ -26,6 +26,21 @@ export async function findLinkedOperator(
     return { operator, twoFactor: two_factor };
 }
 
+// Operator ini sudah tertaut ke penerbit SSO yang sedang dipakai konsol.
+export async function isLinked(
+    db: Database,
+    operatorId: string,
+    issuer: string,
+): Promise<boolean> {
+    const row = await db.one(
+        z.object({ linked: z.boolean() }),
+        `select exists (select 1 from operator_identities
+                        where operator_id = $1 and issuer = $2 and deleted_at is null) as linked`,
+        [operatorId, issuer],
+    );
+    return row?.linked ?? false;
+}
+
 export async function linkIdentity(
     db: Database,
     actor: Actor,
