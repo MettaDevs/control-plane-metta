@@ -226,9 +226,9 @@ export async function grantPackage(
         for (const moduleId of pack.module_ids) {
             const inserted = await db.execute(
                 `insert into tenant_module_entitlements (id, tenant_id, module_id, ends_on, created_at, updated_at)
-                 select $1, $2, $3, $4, ${now}, ${now}
+                 select $1::uuid, $2::uuid, $3::varchar, $4::date, ${now}, ${now}
                  where not exists (select 1 from tenant_module_entitlements
-                                   where tenant_id = $2 and module_id = $3 and deleted_at is null)`,
+                                   where tenant_id = $2::uuid and module_id = $3::varchar and deleted_at is null)`,
                 [Bun.randomUUIDv7(), tenantId, moduleId, grant.ends_on],
             );
             if (inserted) granted.push(moduleId);
