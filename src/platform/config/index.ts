@@ -21,6 +21,13 @@ const environmentSchema = z.object({
     CONSOLE_SSO_CLIENT_ID: z.string().min(1).optional(),
     CONSOLE_SSO_CLIENT_SECRET: z.string().min(1).optional(),
     CONSOLE_SSO_REDIRECT_URI: z.url().optional(),
+    // Portal klien: alamatnya, dan klien SSO miliknya (terpisah dari klien konsol, karena penyedia mencocokkan alamat
+    // balik persis). Konsol memakainya juga untuk meminta penyedia mengirim email undangan, karena penyedia hanya
+    // menerima tautan undangan yang host-nya terdaftar di klien itu. Keempatnya diisi bersama, atau dikosongkan bersama.
+    PORTAL_URL: z.url().optional(),
+    PORTAL_SSO_ISSUER: z.url().optional(),
+    PORTAL_SSO_CLIENT_ID: z.string().min(1).optional(),
+    PORTAL_SSO_CLIENT_SECRET: z.string().min(1).optional(),
     // Pelaporan kesalahan ke Sentry. Kosong berarti mati.
     SENTRY_DSN: z.url().optional(),
     SENTRY_ENVIRONMENT: z.string().min(1).optional(),
@@ -62,9 +69,16 @@ export type SsoSettings = {
     redirectUri: string;
 };
 
+export type PortalSettings = {
+    // Tanpa garis miring di akhir, misalnya https://portal.example.com.
+    url: string;
+    sso: SsoSettings;
+};
+
 export type Config = z.output<typeof environmentSchema> & {
     key: Buffer;
     sso: SsoSettings | null;
+    portal: PortalSettings | null;
 };
 
 export function loadConfig(
@@ -86,9 +100,31 @@ export function loadConfig(
         throw new Error(
             'Set all of CONSOLE_SSO_ISSUER, CONSOLE_SSO_CLIENT_ID, CONSOLE_SSO_CLIENT_SECRET, and CONSOLE_SSO_REDIRECT_URI, or none.',
         );
+    const portal = [
+        values.PORTAL_URL,
+        values.PORTAL_SSO_ISSUER,
+        values.PORTAL_SSO_CLIENT_ID,
+        values.PORTAL_SSO_CLIENT_SECRET,
+    ];
+    if (portal.some(Boolean) && !portal.every(Boolean))
+        throw new Error(
+            'Set all of PORTAL_URL, PORTAL_SSO_ISSUER, PORTAL_SSO_CLIENT_ID, and PORTAL_SSO_CLIENT_SECRET, or none.',
+        );
+    const portalUrl = values.PORTAL_URL?.replace(/\/+$/, '');
     return {
         ...values,
         key,
+        portal: portalUrl
+            ? {
+                  url: portalUrl,
+                  sso: {
+                      issuer: values.PORTAL_SSO_ISSUER!,
+                      clientId: values.PORTAL_SSO_CLIENT_ID!,
+                      clientSecret: values.PORTAL_SSO_CLIENT_SECRET!,
+                      redirectUri: `${portalUrl}/sso/callback`,
+                  },
+              }
+            : null,
         sso: values.CONSOLE_SSO_ISSUER
             ? {
                   issuer: values.CONSOLE_SSO_ISSUER,

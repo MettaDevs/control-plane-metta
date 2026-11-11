@@ -3,6 +3,7 @@ import {
     customerConsoleRoutes,
     entitlementConsoleRoutes,
     packageConsoleRoutes,
+    portalAccessConsoleRoutes,
 } from './customers/index.console.ts';
 import {
     environmentOperationConsoleRoutes,
@@ -27,6 +28,7 @@ export function consoleRouter(config: Config) {
         ...customerConsoleRoutes(session),
         ...entitlementConsoleRoutes(session),
         ...packageConsoleRoutes(session),
+        ...portalAccessConsoleRoutes(config, session),
         ...runtimeHostConsoleRoutes(session),
         ...environmentOperationConsoleRoutes(session),
     };
