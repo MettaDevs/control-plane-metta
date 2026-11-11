@@ -289,6 +289,61 @@
             }
         }
     },
+    "listPackages": {
+        "~orpc": {
+            "errorMap": {},
+            "meta": {},
+            "route": { "method": "GET", "path": "/api/v1/catalog/packages" }
+        }
+    },
+    "createPackage": {
+        "~orpc": {
+            "errorMap": {},
+            "meta": {},
+            "route": {
+                "method": "POST",
+                "path": "/api/v1/catalog/packages",
+                "inputStructure": "detailed",
+                "successStatus": 201
+            }
+        }
+    },
+    "updatePackage": {
+        "~orpc": {
+            "errorMap": {},
+            "meta": {},
+            "route": {
+                "method": "PUT",
+                "path": "/api/v1/catalog/packages/{package}",
+                "inputStructure": "detailed",
+                "successStatus": 204
+            }
+        }
+    },
+    "deletePackage": {
+        "~orpc": {
+            "errorMap": {},
+            "meta": {},
+            "route": {
+                "method": "DELETE",
+                "path": "/api/v1/catalog/packages/{package}",
+                "inputStructure": "detailed",
+                "successStatus": 204
+            }
+        }
+    },
+    "grantPackage": {
+        "~orpc": {
+            "errorMap": {},
+            "meta": {},
+            "route": {
+                "method": "POST",
+                "path": "/api/v1/tenants/{tenant}/packages",
+                "inputStructure": "detailed",
+                "successStatus": 201
+            }
+        }
+    },
     "listRuntimeHosts": {
         "~orpc": {
             "errorMap": {},

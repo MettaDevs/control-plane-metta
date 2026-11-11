@@ -4,6 +4,7 @@ import { createRoute, createRouter } from '@tanstack/react-router';
 import { page as customersCustomerCustomerPage } from './customers/customer/customer.console.page.tsx';
 import { page as customersCustomerCustomersPage } from './customers/customer/customers.console.page.tsx';
 import { page as customersCustomerNewCustomerPage } from './customers/customer/new-customer.console.page.tsx';
+import { page as customersPackageCatalogPage } from './customers/package/catalog.console.page.tsx';
 import { page as environmentsRuntimeHostRuntimeHostsPage } from './environments/runtime-host/runtime-hosts.console.page.tsx';
 import { page as platformShellLoginPage } from './platform/shell/login.console.page.tsx';
 import { page as releasesReleasesPage } from './releases/releases.console.page.tsx';
@@ -37,6 +38,13 @@ const customersCustomerNewCustomerRoute = createRoute({
     path: customersCustomerNewCustomerPage.path,
     component: customersCustomerNewCustomerPage.component,
     staticData: { title: customersCustomerNewCustomerPage.title },
+});
+
+const customersPackageCatalogRoute = createRoute({
+    getParentRoute: () => appLayoutRoute,
+    path: customersPackageCatalogPage.path,
+    component: customersPackageCatalogPage.component,
+    staticData: { title: customersPackageCatalogPage.title },
 });
 
 const environmentsRuntimeHostRuntimeHostsRoute = createRoute({
@@ -81,6 +89,7 @@ const routeTree = rootRoute.addChildren([
         customersCustomerCustomerRoute,
         customersCustomerCustomersRoute,
         customersCustomerNewCustomerRoute,
+        customersPackageCatalogRoute,
         environmentsRuntimeHostRuntimeHostsRoute,
         releasesReleasesRoute,
         sitesSiteSiteRoute,
