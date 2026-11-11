@@ -133,6 +133,30 @@ function RuntimeHostsPage(): ReactNode {
                         minWidth: 160,
                     },
                     {
+                        id: 'reported_release',
+                        header: 'Rilis',
+                        cell: (host) => (
+                            <DataTableText>
+                                {host.reported_release ?? 'Belum melapor'}
+                            </DataTableText>
+                        ),
+                        sortValue: (host) => host.reported_release ?? '',
+                        minWidth: 140,
+                    },
+                    {
+                        id: 'reported_at',
+                        header: 'Laporan terakhir',
+                        cell: (host) => (
+                            <DataTableText>
+                                {host.reported_at
+                                    ? displayTime(host.reported_at)
+                                    : '-'}
+                            </DataTableText>
+                        ),
+                        sortValue: (host) => host.reported_at ?? '',
+                        minWidth: 150,
+                    },
+                    {
                         id: 'created_at',
                         header: 'Didaftarkan',
                         cell: (host) => (

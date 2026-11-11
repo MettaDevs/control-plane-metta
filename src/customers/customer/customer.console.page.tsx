@@ -72,6 +72,41 @@ function hasOpenOperation(customer: Customer): boolean {
     );
 }
 
+function displaySize(bytes: number | null): string {
+    if (bytes === null) return '-';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let value = bytes;
+    let unit = 0;
+    while (value >= 1024 && unit < units.length - 1) {
+        value /= 1024;
+        unit++;
+    }
+    return `${new Intl.NumberFormat('id-ID', { maximumFractionDigits: 1 }).format(value)} ${units[unit] ?? 'B'}`;
+}
+
+// Kesehatan menurut laporan terakhir worker host-nya, beserta waktunya, supaya laporan yang basi terlihat basi.
+function HealthNote({ environment }: { environment: Environment }): ReactNode {
+    if (environment.reported_healthy === null || !environment.reported_at)
+        return <span className="text-muted-foreground">Belum dilaporkan</span>;
+    return (
+        <span className="flex flex-col gap-0.5">
+            {environment.reported_healthy ? (
+                <span>Sehat</span>
+            ) : (
+                <span className="text-destructive">
+                    Bermasalah
+                    {environment.reported_problem
+                        ? `: ${environment.reported_problem}`
+                        : ''}
+                </span>
+            )}
+            <span className="text-xs text-muted-foreground">
+                Dilaporkan {displayTime(environment.reported_at)}
+            </span>
+        </span>
+    );
+}
+
 function Fact({ label, children }: { label: string; children: ReactNode }) {
     return (
         <div className="flex min-w-0 flex-col gap-0.5">
@@ -355,6 +390,15 @@ function EnvironmentSection({
                         {displayTime(environment.purge_after)}
                     </Fact>
                 )}
+                <Fact label="Kesehatan">
+                    <HealthNote environment={environment} />
+                </Fact>
+                <Fact label="Skema">
+                    {environment.reported_migrations?.core ?? '-'}
+                </Fact>
+                <Fact label="Ukuran database">
+                    {displaySize(environment.reported_size_bytes)}
+                </Fact>
             </dl>
             <DataTable
                 data={environment.operations}
