@@ -3,7 +3,8 @@
 import { createRoute, createRouter } from '@tanstack/react-router';
 import { page as customersCustomerCustomerPage } from './customers/customer/customer.console.page.tsx';
 import { page as customersCustomerCustomersPage } from './customers/customer/customers.console.page.tsx';
-import { page as customersPackageCatalogPage } from './customers/package/catalog.console.page.tsx';
+import { page as customersEntitlementModulesPage } from './customers/entitlement/modules.console.page.tsx';
+import { page as customersPackageModuleGroupsPage } from './customers/package/module-groups.console.page.tsx';
 import { page as environmentsRuntimeHostRuntimeHostsPage } from './environments/runtime-host/runtime-hosts.console.page.tsx';
 import { page as platformShellLoginPage } from './platform/shell/login.console.page.tsx';
 import { page as releasesReleasesPage } from './releases/releases.console.page.tsx';
@@ -32,11 +33,18 @@ const customersCustomerCustomersRoute = createRoute({
     staticData: { title: customersCustomerCustomersPage.title },
 });
 
-const customersPackageCatalogRoute = createRoute({
+const customersEntitlementModulesRoute = createRoute({
     getParentRoute: () => appLayoutRoute,
-    path: customersPackageCatalogPage.path,
-    component: customersPackageCatalogPage.component,
-    staticData: { title: customersPackageCatalogPage.title },
+    path: customersEntitlementModulesPage.path,
+    component: customersEntitlementModulesPage.component,
+    staticData: { title: customersEntitlementModulesPage.title },
+});
+
+const customersPackageModuleGroupsRoute = createRoute({
+    getParentRoute: () => appLayoutRoute,
+    path: customersPackageModuleGroupsPage.path,
+    component: customersPackageModuleGroupsPage.component,
+    staticData: { title: customersPackageModuleGroupsPage.title },
 });
 
 const environmentsRuntimeHostRuntimeHostsRoute = createRoute({
@@ -80,7 +88,8 @@ const routeTree = rootRoute.addChildren([
     appLayoutRoute.addChildren([
         customersCustomerCustomerRoute,
         customersCustomerCustomersRoute,
-        customersPackageCatalogRoute,
+        customersEntitlementModulesRoute,
+        customersPackageModuleGroupsRoute,
         environmentsRuntimeHostRuntimeHostsRoute,
         releasesReleasesRoute,
         sitesSiteSiteRoute,

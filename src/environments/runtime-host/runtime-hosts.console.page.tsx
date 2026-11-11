@@ -11,7 +11,7 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@control-plane-metta/ui/dialog';
-import { FormControl } from '@control-plane-metta/ui/form-control';
+import { FormControl, FormGrid } from '@control-plane-metta/ui/form-control';
 import { Input } from '@control-plane-metta/ui/input';
 import { Label } from '@control-plane-metta/ui/label';
 import { ListPageLayout } from '@control-plane-metta/ui/list-page-layout';
@@ -45,9 +45,9 @@ const revokeAction = {
 };
 
 const ringLabels: Record<Host['ring'], string> = {
-    canary: 'Uji',
-    early: 'Awal',
-    general: 'Umum',
+    canary: 'Canary',
+    early: 'Early',
+    general: 'General',
 };
 
 function availabilityBadge(availability: Host['availability']): {
@@ -139,74 +139,76 @@ function SettingsDialog({
                             terpengaruh.
                         </DialogDescription>
                     </DialogHeader>
-                    <DialogBody className="flex flex-col gap-4">
-                        <div className="flex items-center justify-between gap-4">
-                            <Label htmlFor="accepts-new">
-                                Terima lingkungan baru
-                            </Label>
-                            <Switch
-                                id="accepts-new"
-                                checked={acceptsNew}
-                                onCheckedChange={setAcceptsNew}
-                            />
-                        </div>
-                        <div className="flex items-center justify-between gap-4">
-                            <Label htmlFor="dedicated">
-                                Khusus, hanya bila dipilih langsung
-                            </Label>
-                            <Switch
-                                id="dedicated"
-                                checked={dedicated}
-                                onCheckedChange={setDedicated}
-                            />
-                        </div>
-                        <FormControl
-                            error={errors.capacity?.[0]}
-                            hint="Jumlah lingkungan paling banyak di server ini. Kosongkan untuk tanpa batas."
-                        >
-                            <Input
-                                label="Kapasitas"
-                                inputMode="numeric"
-                                value={capacity}
-                                onChange={(event) =>
-                                    setCapacity(event.target.value)
-                                }
-                            />
-                        </FormControl>
-                        <FormControl
-                            error={errors.ring?.[0]}
-                            hint="Urutan saat pembaruan dijalankan bertahap: Uji lebih dulu, lalu Awal, lalu Umum."
-                        >
-                            <Select
-                                label="Ring"
-                                required
-                                searchPlaceholder="Cari…"
-                                items={(
-                                    ['canary', 'early', 'general'] as const
-                                ).map((value) => ({
-                                    value,
-                                    label: ringLabels[value],
-                                }))}
-                                value={ring}
-                                onValueChange={(value) => {
-                                    if (
-                                        value === 'canary' ||
-                                        value === 'early' ||
-                                        value === 'general'
-                                    )
-                                        setRing(value);
-                                }}
-                                portalContainer={content}
-                            />
-                        </FormControl>
-                        {message && (
-                            <p
-                                role="alert"
-                                className="text-sm text-destructive"
+                    <DialogBody>
+                        <FormGrid columns={1}>
+                            <div className="flex items-center justify-between gap-4">
+                                <Label htmlFor="accepts-new">
+                                    Terima lingkungan baru
+                                </Label>
+                                <Switch
+                                    id="accepts-new"
+                                    checked={acceptsNew}
+                                    onCheckedChange={setAcceptsNew}
+                                />
+                            </div>
+                            <div className="flex items-center justify-between gap-4">
+                                <Label htmlFor="dedicated">
+                                    Khusus, hanya bila dipilih langsung
+                                </Label>
+                                <Switch
+                                    id="dedicated"
+                                    checked={dedicated}
+                                    onCheckedChange={setDedicated}
+                                />
+                            </div>
+                            <FormControl
+                                error={errors.capacity?.[0]}
+                                hint="Jumlah lingkungan paling banyak di server ini. Kosongkan untuk tanpa batas."
                             >
-                                {message}
-                            </p>
-                        )}
+                                <Input
+                                    label="Kapasitas"
+                                    inputMode="numeric"
+                                    value={capacity}
+                                    onChange={(event) =>
+                                        setCapacity(event.target.value)
+                                    }
+                                />
+                            </FormControl>
+                            <FormControl
+                                error={errors.ring?.[0]}
+                                hint="Urutan host saat versi aplikasi baru dipasang bertahap: host Canary lebih dulu, lalu Early, lalu General."
+                            >
+                                <Select
+                                    label="Release ring"
+                                    required
+                                    searchPlaceholder="Cari…"
+                                    items={(
+                                        ['canary', 'early', 'general'] as const
+                                    ).map((value) => ({
+                                        value,
+                                        label: ringLabels[value],
+                                    }))}
+                                    value={ring}
+                                    onValueChange={(value) => {
+                                        if (
+                                            value === 'canary' ||
+                                            value === 'early' ||
+                                            value === 'general'
+                                        )
+                                            setRing(value);
+                                    }}
+                                    portalContainer={content}
+                                />
+                            </FormControl>
+                            {message && (
+                                <p
+                                    role="alert"
+                                    className="text-sm text-destructive"
+                                >
+                                    {message}
+                                </p>
+                            )}
+                        </FormGrid>
                     </DialogBody>
                     <DialogFooter>
                         <DialogAction type="submit" disabled={save.isPending}>
@@ -311,7 +313,7 @@ function RuntimeHostsPage(): ReactNode {
                     },
                     {
                         id: 'ring',
-                        header: 'Ring',
+                        header: 'Release ring',
                         cell: (host) => (
                             <DataTableText>
                                 {ringLabels[host.ring]}

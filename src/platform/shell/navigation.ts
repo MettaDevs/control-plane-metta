@@ -26,9 +26,16 @@ export const navigation: NavigationGroup[] = [
     {
         id: 'catalog',
         label: 'Katalog',
-        href: '/catalog',
+        href: '/catalog/modules',
         icon: Blocks,
-        items: [{ id: 'catalog', label: 'Module', href: '/catalog' }],
+        items: [
+            { id: 'modules', label: 'Module', href: '/catalog/modules' },
+            {
+                id: 'module-groups',
+                label: 'Susunan module',
+                href: '/catalog/module-groups',
+            },
+        ],
     },
     {
         id: 'sites',
