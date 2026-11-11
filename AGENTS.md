@@ -78,6 +78,22 @@ Keputusan pemilik produk, 10 November 2026: layar konsol memakai susunan yang sa
 - **Paket UI** `packages/ui` (`@control-plane-metta/ui`) disalin dari `@operations-metta/ui` sebagai titik awal dan berkembang sendiri di repo ini. Tidak ada skrip penyelaras dan tidak ada ketergantungan pada operations-metta.
 - **Build.** `bun run build` membundel proses server ke `dist/` dan `src/client.tsx` beserta `src/platform/shell/app.css` ke `dist/client/` dengan nama `<nama>-<hash>.<ext>`, lalu menulis `dist/client/manifest.json`. Tailwind v4 dijalankan lewat `@tailwindcss/node` dan `@tailwindcss/oxide`; font `@fontsource` ditulis sebagai berkas sendiri.
 
+### Menjalankan seluruh alur di laptop
+
+`bun run dev:stack` menjalankan konsol (`localhost:8100`), agen (`8101`), operations (`8102`), dan worker sekaligus.
+Clone operations-metta dicari di sebelah repo ini atau di sebelah leluhurnya, atau ditunjuk lewat `OPERATIONS_DIR`.
+Butuh Docker: database keduanya ada di satu container `metta-dev-db` (port `55433`, volume bernama sama).
+
+- Login konsol memakai `dev/operator.json`. Akun itu hanya untuk laptop.
+- Customer yang dibuat di konsol disiapkan worker laptop. Kliniknya dibuka di `http://<tenant>.localhost:8102`,
+  demo dan sandbox di `http://<tenant>.<jenis>.localhost:8102`. Peramban mengarahkan `*.localhost` ke laptop sendiri,
+  jadi tidak perlu DNS atau sertifikat.
+- `APP_KEY` kedua sisi dan kunci worker tersimpan di `~/.metta-dev`, supaya setiap worktree memakai host runtime yang
+  sama. Menghapus folder itu membuat host runtime baru; host lama tidak lagi melapor dan tidak dipilih penempatan.
+- Aman diulang: database, migration, operator, dan host runtime yang sudah ada dipakai lagi. Mulai dari nol dengan
+  `docker rm -f metta-dev-db && docker volume rm metta-dev-db`.
+- Ctrl+C menghentikan keempat proses. Satu proses yang berhenti sendiri menghentikan semuanya.
+
 ### Menjalankan layar di laptop
 
 Butuh database yang sudah dimigrasi, `APP_KEY` (32 byte, `base64:...`), dan satu operator dari `bun src/cli.ts create-operator`. Tanpa HTTPS, isi `SESSION_SECURE_COOKIE=false` supaya peramban menyimpan cookie sesi. Lalu `bun run dev`: proses konsol berjalan dengan `bun --watch`, dan build peramban diulang setiap kali berkas di `src/` atau `packages/ui/src/` berubah. Muat ulang halaman untuk melihat hasilnya.
