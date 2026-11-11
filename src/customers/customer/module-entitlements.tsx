@@ -35,6 +35,18 @@ type Entitlement = Tenant['entitlements'][number];
 
 const changeAction = { id: 'change', label: 'Ubah tanggal berakhir' };
 const revokeAction = { id: 'revoke', label: 'Cabut', destructive: true };
+const applyingNote =
+    'Lingkungan tenant ini menyesuaikan saat worker mengambil pekerjaan berikutnya.';
+
+// Pilihan di dialog tambah module: satu module, atau satu susunan module dari Katalog yang memberi semua module-nya
+// sekaligus.
+type Choice = { kind: 'module' | 'group'; id: string };
+const encode = (choice: Choice) => `${choice.kind}:${choice.id}`;
+function decode(value: string): Choice | null {
+    const [kind, id] = value.split(':', 2);
+    if ((kind === 'module' || kind === 'group') && id) return { kind, id };
+    return null;
+}
 
 function useRefreshCustomer() {
     const queryClient = useQueryClient();
@@ -42,7 +54,7 @@ function useRefreshCustomer() {
         queryClient.invalidateQueries({ queryKey: orpc.showCustomer.key() });
 }
 
-// Satu dialog untuk memberi hak baru (module dipilih) dan mengubah tanggal berakhir hak yang ada (module tetap).
+// Satu dialog untuk memberi hak baru (module atau susunan module dipilih) dan mengubah tanggal berakhir hak yang ada.
 function EntitlementDialog({
     tenant,
     editing,
@@ -54,7 +66,7 @@ function EntitlementDialog({
 }): ReactNode {
     const refresh = useRefreshCustomer();
     const content = useRef<HTMLDivElement>(null);
-    const [moduleId, setModuleId] = useState('');
+    const [choice, setChoice] = useState('');
     const [endsOn, setEndsOn] = useState(editing?.ends_on ?? '');
     const [errors, setErrors] = useState<Record<string, string[]>>({});
     const [message, setMessage] = useState<string | null>(null);
@@ -62,30 +74,64 @@ function EntitlementDialog({
         ...orpc.listModuleCatalog.queryOptions(),
         enabled: editing === null,
     });
+    const groups = useQuery({
+        ...orpc.listPackages.queryOptions(),
+        enabled: editing === null,
+    });
     const entitled = new Set(tenant.entitlements.map((row) => row.module_id));
-    const callbacks = {
-        onMutate: () => {
-            setErrors({});
-            setMessage(null);
-        },
-        onSuccess: async () => {
-            toast.success(
-                'Hak module disimpan. Lingkungan tenant ini menyesuaikan saat worker mengambil pekerjaan berikutnya.',
-            );
-            onOpenChange(false);
-            await refresh();
-        },
-        onError: (caught: Error) => {
-            if (caught instanceof ApiError && caught.status === 422)
-                setErrors(caught.errors);
-            else setMessage(errorText(caught, 'Hak module belum disimpan.'));
-        },
+    const items = [
+        ...(catalog.data?.modules ?? [])
+            .filter((module) => !entitled.has(module.id))
+            .map((module) => ({
+                value: encode({ kind: 'module', id: module.id }),
+                label: module.name,
+            })),
+        ...(groups.data?.packages ?? []).map((group) => ({
+            value: encode({ kind: 'group', id: group.id }),
+            label: `${group.name}: ${group.modules.map((module) => module.name).join(', ')}`,
+        })),
+    ];
+    const done = async (text: string) => {
+        toast.success(text);
+        onOpenChange(false);
+        await refresh();
     };
-    const grant = useMutation(orpc.grantEntitlement.mutationOptions(callbacks));
-    const change = useMutation(
-        orpc.changeEntitlement.mutationOptions(callbacks),
+    const failed = (caught: Error) => {
+        if (caught instanceof ApiError && caught.status === 422)
+            setErrors(caught.errors);
+        else setMessage(errorText(caught, 'Module belum disimpan.'));
+    };
+    const reset = () => {
+        setErrors({});
+        setMessage(null);
+    };
+    const grant = useMutation(
+        orpc.grantEntitlement.mutationOptions({
+            onMutate: reset,
+            onSuccess: () => done(`Module ditambahkan. ${applyingNote}`),
+            onError: failed,
+        }),
     );
-    const pending = grant.isPending || change.isPending;
+    const grantGroup = useMutation(
+        orpc.grantPackage.mutationOptions({
+            onMutate: reset,
+            onSuccess: (result) =>
+                done(
+                    result.granted.length
+                        ? `${String(result.granted.length)} module ditambahkan. ${applyingNote}`
+                        : 'Tenant ini sudah memiliki semua module di susunan itu.',
+                ),
+            onError: failed,
+        }),
+    );
+    const change = useMutation(
+        orpc.changeEntitlement.mutationOptions({
+            onMutate: reset,
+            onSuccess: () => done(`Tanggal berakhir disimpan. ${applyingNote}`),
+            onError: failed,
+        }),
+    );
+    const pending = grant.isPending || grantGroup.isPending || change.isPending;
     return (
         <Dialog open onOpenChange={onOpenChange}>
             <DialogContent size="compact" ref={content}>
@@ -94,15 +140,27 @@ function EntitlementDialog({
                     onSubmit={(event) => {
                         event.preventDefault();
                         const ends_on = endsOn === '' ? null : endsOn;
-                        if (editing)
+                        if (editing) {
                             change.mutate({
                                 params: { entitlement: editing.id },
                                 body: { ends_on },
                             });
-                        else
+                            return;
+                        }
+                        const chosen = decode(choice);
+                        if (!chosen) {
+                            setErrors({ module_id: ['Pilih module.'] });
+                            return;
+                        }
+                        if (chosen.kind === 'module')
                             grant.mutate({
                                 params: { tenant: tenant.id },
-                                body: { module_id: moduleId, ends_on },
+                                body: { module_id: chosen.id, ends_on },
+                            });
+                        else
+                            grantGroup.mutate({
+                                params: { tenant: tenant.id },
+                                body: { package_id: chosen.id, ends_on },
                             });
                     }}
                 >
@@ -121,29 +179,24 @@ function EntitlementDialog({
                     <DialogBody className="flex flex-col gap-4">
                         {!editing && (
                             <FormControl
-                                error={errors.module_id?.[0]}
+                                error={
+                                    errors.module_id?.[0] ??
+                                    errors.package_id?.[0]
+                                }
                                 hint={
                                     catalog.data && !catalog.data.modules.length
                                         ? 'Belum ada module. Module muncul setelah host runtime melaporkannya.'
-                                        : undefined
+                                        : 'Susunan module memberi semua module di dalamnya sekaligus. Module yang sudah dimiliki tidak diubah.'
                                 }
                             >
                                 <Select
                                     label="Module"
                                     required
                                     searchPlaceholder="Cari module…"
-                                    items={(catalog.data?.modules ?? [])
-                                        .filter(
-                                            (module) =>
-                                                !entitled.has(module.id),
-                                        )
-                                        .map((module) => ({
-                                            value: module.id,
-                                            label: module.name,
-                                        }))}
-                                    value={moduleId}
+                                    items={items}
+                                    value={choice}
                                     onValueChange={(value) =>
-                                        setModuleId(value ?? '')
+                                        setChoice(value ?? '')
                                     }
                                     portalContainer={content}
                                 />
