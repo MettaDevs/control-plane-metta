@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test';
 import {
-    readCookie,
     readSession,
     signSession,
 } from '../../../src/platform/operator-identity/session-cookie.ts';
@@ -27,13 +26,5 @@ describe('session cookie', () => {
         expect(readSession(Buffer.alloc(32, 2), value, 1_500)).toBeNull();
         expect(readSession(key, 'not-a-cookie', 1_500)).toBeNull();
         expect(readSession(key, `${value}.extra`, 1_500)).toBeNull();
-    });
-
-    test('finds a cookie by exact name', () => {
-        const request = new Request('http://localhost/', {
-            headers: { cookie: 'other_session=a; session=b=c; x=y' },
-        });
-        expect(readCookie(request, 'session')).toBe('b=c');
-        expect(readCookie(request, 'missing')).toBeNull();
     });
 });

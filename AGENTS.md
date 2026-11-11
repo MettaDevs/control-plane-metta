@@ -1,6 +1,6 @@
 # control-plane-metta
 
-- Repo ini adalah control plane kami untuk onboarding, trial gratis 30 hari Praktik Dokter, tenant, lingkungan, rilis, dan agen server. Di dalamnya akan ada konsol operator internal dan, menyusul kemudian, portal customer. Keduanya di-deploy terpisah.
+- Repo ini adalah control plane kami untuk onboarding, trial gratis 30 hari Praktik Dokter, tenant, lingkungan, rilis, dan agen server. Di dalamnya ada konsol operator internal dan portal klien. Keduanya di-deploy terpisah.
 - Yang sudah ada baru fondasinya: proses konsol dengan login operator dan layar pertamanya (login, daftar customer, customer baru), proses agen, skema awal tabel pusat, dan pemeriksaan batas.
 - Runtime yang dijalankan untuk klinik, yaitu ERP dan Praktik Dokter, milik repo [operations-metta](https://github.com/MettaDevs/operations-metta).
 - Untuk alur yang sudah ada di konsol operator CoreERP (`apps/control-plane`, alamatnya admin.erp), CoreERP tetap acuan perilaku sampai alur itu selesai dipindah. Aturan konsol itu ada di skill [`control-plane-metta-console`](.agents/skills/control-plane-metta-console/SKILL.md), [`docs/dev/31-admin-erp-control-plane.md`](https://github.com/MettaDevs/coreERP/blob/main/docs/dev/31-admin-erp-control-plane.md), dan [`docs/dev/32-sso.md`](https://github.com/MettaDevs/coreERP/blob/main/docs/dev/32-sso.md).
@@ -15,12 +15,12 @@ Repo ini tumbuh dengan menambah folder dan berkas di tempat yang sudah ditetapka
 
 | Yang bertambah | Tempatnya | Contoh |
 | --- | --- | --- |
-| Proses yang di-deploy | Satu berkas di akar `src/` | `src/console.ts` untuk operator, `src/agent.ts` untuk agen server dan pipeline rilis. Nanti `src/portal.ts` untuk customer dan `src/worker.ts` |
+| Proses yang di-deploy | Satu berkas di akar `src/` | `src/console.ts` untuk operator, `src/agent.ts` untuk agen server dan pipeline rilis, `src/portal.ts` untuk klien. Nanti `src/worker.ts` |
 | Kemampuan bersama | `src/platform/<kemampuan>/` dengan `index.ts`. Kemampuan yang memuat lebih dari satu fitur memecahnya ke subfolder fitur | `src/platform/database/`, `src/platform/operator-identity/sso/` |
 | Area bisnis, lalu fitur | `src/<area>/<fitur>/` | `src/environments/provision/`, `src/sites/enrollment/` |
 | Peran berkas | Akhiran `.schema.ts`, `.service.ts`, `.routes.ts`, dan nanti `.page.tsx` | `environment.service.ts` |
-| Test | `test/` di akar repo, dengan susunan folder yang sama dengan `src/` (atau `scripts/` untuk test skrip). Bantuan test di `test/support/` | `test/platform/operator-identity/sso/oidc.test.ts` untuk `src/platform/operator-identity/sso/oidc.ts` |
-| Pemanggil route atau layar | `.console.routes.ts`, `.agent.routes.ts`, `.portal.routes.ts`, dan `.console.page.tsx` | `site.agent.routes.ts` |
+| Test | `test/` di akar repo, dengan susunan folder yang sama dengan `src/` (atau `scripts/` untuk test skrip). Bantuan test di `test/support/` | `test/platform/oidc/oidc.test.ts` untuk `src/platform/oidc/index.ts` |
+| Pemanggil route atau layar | `.console.routes.ts`, `.agent.routes.ts`, `.portal.routes.ts`, `.console.page.tsx`, dan `.portal.page.tsx` | `site.agent.routes.ts` |
 | Pintu area per pemanggil | `index.ts` untuk layanan bersama, `index.<pemanggil>.ts` untuk route satu pemanggil | `src/sites/index.agent.ts` |
 | Migration | `database/migrations/` | `0001_baseline.sql` |
 | Kontrak | `contracts/agent/` untuk API agen, `contracts/onboarding/` untuk API onboarding | `contracts/agent/openapi.yaml` |
@@ -39,7 +39,7 @@ Repo ini tumbuh dengan menambah folder dan berkas di tempat yang sudah ditetapka
 
 ## Konsol dan portal
 
-- Konsol dan portal di-deploy terpisah, masing-masing dengan host dan login sendiri. Konsol memakai SSO operator. Portal memakai akun customer.
+- Konsol dan portal di-deploy terpisah, masing-masing dengan host dan login sendiri. Konsol memakai login operator dan SSO operator. Portal hanya memakai SSO, dengan akses yang lahir dari undangan; rinciannya di [Portal klien](#portal-klien).
 - Rute operator tidak bisa dijangkau dari host portal. Di konsol, yang bukan operator mendapat 404, bukan 403, karena 403 memberi tahu bahwa alamat itu ada.
 - Konsol dan portal memanggil layanan onboarding yang sama. Dari portal, customer tidak bisa memilih apa yang hanya boleh dipilih operator, misalnya owner, database, rilis, akun dukungan, dan tenggat.
 - Pengelolaan pengguna dan role di dalam tenant milik operations-metta, bukan konsol atau portal.
@@ -61,22 +61,24 @@ Repo ini tumbuh dengan menambah folder dan berkas di tempat yang sudah ditetapka
 
 Keputusan pemilik produk, 10 November 2026: layar konsol memakai susunan yang sama dengan layar operations-metta, yaitu SPA dengan TanStack Router dan TanStack Query di atas API oRPC, bukan Inertia. Server tidak merender halaman. Ia menyajikan satu dokumen yang sama untuk setiap URL layar, dan layar mengambil datanya sendiri dari `/api/`.
 
-- **Hanya proses konsol yang menyajikan layar.** `src/console.ts` memberi `clientBuild(CLIENT_DIR)` ke `serve()`; proses agen tidak, jadi URL layar di sana dijawab 404 JSON seperti alamat lain.
+- **Hanya proses konsol dan portal yang menyajikan layar, masing-masing dari bundle sendiri.** `src/console.ts` memberi `clientBuild(CLIENT_DIR)` ke `serve()`, `src/portal.ts` memberi `clientBuild(PORTAL_CLIENT_DIR)`; proses agen tidak, jadi URL layar di sana dijawab 404 JSON seperti alamat lain.
 - **URL layar dan URL data terpisah.** Data hanya di bawah `/api/`. URL lain milik layar, misalnya `/customers` dan `/customers/new`. Pengecualiannya alamat yang dijawab server: `GET /up`, `/sso/...` untuk upacara SSO, serta `POST /login`, `POST /login/two-factor`, dan `POST /logout`.
   - `src/platform/http/spa.ts` memeriksa dua hal sebelum database disentuh. `GET /build/<berkas>` mendapat berkas build ber-hash yang tercatat di manifest, dengan cache `immutable`. GET lain di luar alamat server mendapat dokumen layar.
   - Selain dua hal itu, semuanya diteruskan ke oRPC. Permintaan `/api/...` tidak pernah mendapat dokumen layar, dan 404-nya tetap JSON.
   - Procedure baru yang dibaca layar ditulis di bawah `/api/v1/...`. GET oRPC di luar `/api/` tertutup dokumen layar, kecuali ditambahkan ke `isServerPath()`.
-- **Halaman** adalah berkas `<fitur>.console.page.tsx` di folder fiturnya, yang meng-export `page` dari `definePage({ path, layout, title, validateSearch?, component })`.
+- **Halaman** adalah berkas `<fitur>.console.page.tsx` atau `<fitur>.portal.page.tsx` di folder fiturnya, yang meng-export `page` dari `definePage({ path, layout, title, validateSearch?, component })`. Halaman konsol hanya masuk bundle konsol dan halaman portal hanya bundle portal; halaman tanpa salah satu akhiran itu ditolak generator.
   - `path` adalah URL layar dan ditulis sebagai teks literal. Nama dan folder berkas tidak menentukan URL.
   - `layout: 'app'` memasang halaman di dalam bingkai konsol dan mewajibkan login. `'auth'` dipakai untuk halaman sebelum login.
   - Id route adalah id layout ditambah path, misalnya `/_app/customers` atau `/_auth/login`. `Link`, `navigate`, dan `redirect` memakai path, dan TypeScript menolak path yang tidak ada.
   - Komponen halaman dan layout menulis tipe kembaliannya (`(): ReactNode`), supaya tipe route tree tidak hilang diam-diam.
-- **Route tree dirakit otomatis.** `scripts/generate-client.ts` membaca setiap `.page.tsx` di `src/`, lalu menulis `src/client.tsx` (entry peramban beserta route tree-nya) dan `src/platform/shell/api-contract.generated.json` (bentuk route oRPC konsol untuk klien di peramban). Keduanya di-commit dan tidak pernah disunting tangan. `bun run build` dan `bun run dev` menulisnya ulang, dan `bun run check:generated` menolak berkas yang tertinggal.
-- **Data.** Halaman memanggil API lewat `api` (klien oRPC) dan `orpc` (TanStack Query) dari `src/platform/shell/index.ts`. Tipe input dan output datang dari router di `src/console.ts`, jadi tidak ditulis ulang di layar. Body yang diperiksa handler, bukan oRPC, diberi tipe lewat `z.custom<...>()`, supaya pesan 422 per field-nya tetap milik service. Kegagalan API menjadi `ApiError`, berisi status, pesan, error per field, dan kodenya.
+- **Route tree dirakit otomatis.** `scripts/generate-client.ts` membaca setiap `.page.tsx` di `src/`, lalu menulis untuk konsol `src/client.tsx` (entry peramban beserta route tree-nya) dan `src/platform/shell/api-contract.generated.json` (bentuk route oRPC konsol untuk klien di peramban), dan untuk portal `src/portal-client.tsx` dan `src/platform/shell/api-contract.portal.generated.json`. Semuanya di-commit dan tidak pernah disunting tangan. `bun run build`, `bun run dev`, dan `bun run dev:portal` menulisnya ulang, dan `bun run check:generated` menolak berkas yang tertinggal.
+- **Bingkai portal** ada di `src/platform/shell/` dengan akhiran `.portal`: `index.portal.ts` (pintu untuk halaman portal), `api.portal.ts`, `router.portal.tsx`, dan `portal-layout.portal.tsx`. Yang dipakai kedua bundle tanpa akhiran: `runtime.tsx` (query client, start, halaman galat dan memuat), `api-client.ts` (`ApiError`, `errorText`, link oRPC), `page.ts`, `auth-layout.tsx`. Halaman portal meng-import dari `index.portal.ts`, tidak dari `index.ts`. `check:boundaries` menolak entry peramban yang memuat berkas bertipe router proses lain, jadi klien API konsol tidak pernah ikut bundle portal.
+- **Dua program TypeScript.** Setiap entry peramban mendaftarkan router-nya ke `Register` TanStack Router, dan dua pendaftaran tidak bisa hidup di satu program. `tsconfig.json` mengecualikan berkas peramban portal, dan `tsconfig.portal.json` memeriksanya dari `src/portal-client.tsx`. `bun run typecheck` menjalankan keduanya.
+- **Data.** Halaman memanggil API lewat `api` (klien oRPC) dan `orpc` (TanStack Query) dari `src/platform/shell/index.ts`, atau dari `index.portal.ts` untuk halaman portal. Tipe input dan output datang dari router di `src/console.ts` atau `src/portal.ts`, jadi tidak ditulis ulang di layar. Body yang diperiksa handler, bukan oRPC, diberi tipe lewat `z.custom<...>()`, supaya pesan 422 per field-nya tetap milik service. Kegagalan API menjadi `ApiError`, berisi status, pesan, error per field, dan kodenya.
 - **Sesi.** Layar memakai cookie sesi konsol yang sudah ada. Klien mengirim setiap perubahan sebagai JSON, termasuk yang tanpa body, karena konsol menolak yang lain. Data halaman yang dijawab 401 membawa operator ke `/login?redirect=<asal>`; simpan yang gagal karena sesi habis menampilkan pesan, dan isian form tetap ada.
-- **Kode peramban dan kode server tidak bercampur.** Kode peramban adalah `src/client.tsx`, `src/platform/shell/`, dan setiap berkas `.tsx`. Ia hanya mengambil tipe dari kode server (`import type`), dan kode server tidak meng-import-nya. Hanya `src/client.tsx` yang meng-import halaman. `check:boundaries` menjaga ketiganya.
+- **Kode peramban dan kode server tidak bercampur.** Kode peramban adalah `src/client.tsx`, `src/portal-client.tsx`, `src/platform/shell/`, dan setiap berkas `.tsx`. Ia hanya mengambil tipe dari kode server (`import type`), dan kode server tidak meng-import-nya. Hanya kedua entry peramban yang meng-import halaman. `check:boundaries` menjaga ketiganya.
 - **Paket UI** `packages/ui` (`@control-plane-metta/ui`) disalin dari `@operations-metta/ui` sebagai titik awal dan berkembang sendiri di repo ini. Tidak ada skrip penyelaras dan tidak ada ketergantungan pada operations-metta.
-- **Build.** `bun run build` membundel proses server ke `dist/` dan `src/client.tsx` beserta `src/platform/shell/app.css` ke `dist/client/` dengan nama `<nama>-<hash>.<ext>`, lalu menulis `dist/client/manifest.json`. Tailwind v4 dijalankan lewat `@tailwindcss/node` dan `@tailwindcss/oxide`; font `@fontsource` ditulis sebagai berkas sendiri.
+- **Build.** `bun run build` membundel proses server ke `dist/` (`console.js`, `agent.js`, `portal.js`, `cli.js`), `src/client.tsx` ke `dist/client/`, dan `src/portal-client.tsx` ke `dist/portal-client/`, masing-masing beserta `src/platform/shell/app.css`, dengan nama `<nama>-<hash>.<ext>`, lalu menulis `manifest.json` di setiap folder. Tailwind v4 dijalankan lewat `@tailwindcss/node` dan `@tailwindcss/oxide`; font `@fontsource` ditulis sebagai berkas sendiri.
 
 ### Menjalankan seluruh alur di laptop
 
@@ -97,6 +99,18 @@ Butuh Docker: database keduanya ada di satu container `metta-dev-db` (port `5543
 ### Menjalankan layar di laptop
 
 Butuh database yang sudah dimigrasi, `APP_KEY` (32 byte, `base64:...`), dan satu operator dari `bun src/cli.ts create-operator`. Tanpa HTTPS, isi `SESSION_SECURE_COOKIE=false` supaya peramban menyimpan cookie sesi. Lalu `bun run dev`: proses konsol berjalan dengan `bun --watch`, dan build peramban diulang setiap kali berkas di `src/` atau `packages/ui/src/` berubah. Muat ulang halaman untuk melihat hasilnya.
+
+## Portal klien
+
+Layar untuk pemilik dan admin klinik, terpisah dari konsol operator: database, repo, dan image sama, hanya alamat dan prosesnya yang berbeda. Prosesnya `src/portal.ts` (di container: `bun dist/portal.js`), yang hanya memuat route `.portal.routes.ts` dan menyajikan layar dari `dist/portal-client/`. Hari ini isinya baru daftar lingkungan dan module setiap klinik, hanya baca.
+
+- **Env.** Selain `DB_*`, `APP_KEY`, `HOST`, `PORT`, dan `SESSION_*` yang sama dengan konsol: `PORTAL_URL` (alamat portal, misalnya `https://portal.example.com`), `PORTAL_SSO_ISSUER`, `PORTAL_SSO_CLIENT_ID`, dan `PORTAL_SSO_CLIENT_SECRET`. Keempatnya diisi bersama; tanpa itu proses portal menolak berjalan. `PORTAL_CLIENT_DIR` bawaannya `dist/portal-client`. Konsol juga membaca keempatnya untuk membuat tautan undangan.
+- **Alamat yang didaftarkan di klien SSO portal** di penyedia SSO: `<PORTAL_URL>/sso/callback` sebagai redirect URI, dan `<PORTAL_URL>/sso/backchannel-logout` sebagai back-channel logout URI. Klien SSO portal terpisah dari klien SSO konsol.
+- **Akses hanya lewat undangan.** Operator mengundang dari halaman customer di konsol; penyedia SSO mengirim tautan `<PORTAL_URL>/invitation?token=...` ke email penerima. Pemegang tautan masuk SSO lewat `GET /sso/start?invitation=<token>`, dan callback menautkan `iss` dan `sub`-nya ke customer itu di `client_portal_users`, di dalam transaksi yang mengunci undangan dan memeriksanya ulang. Email akun SSO tidak pernah dicocokkan dengan email undangan: yang membuktikan adalah tautan yang sampai ke kotak masuk. Token diperiksa sebelum browser dibawa ke penyedia; yang sudah dipakai, dibatalkan, atau lewat masanya dibawa ke `/login?portal_error=invitation-invalid`.
+- **Login** lewat `GET /sso/start` hanya diterima bila identitas itu masih memegang akses hidup; yang belum dibawa ke `/login?portal_error=not-linked`. Upacara SSO sama dengan konsol (PKCE, cookie upacara `Lax` di `Path=/sso`, callback yang berpindah sendiri), lewat `src/platform/oidc/` yang dipakai bersama.
+- **Sesi** adalah cookie `<SESSION_COOKIE>_portal`, `HttpOnly`, `SameSite=Strict`, terenkripsi dengan kunci turunan `APP_KEY`, berisi `iss`, `sub`, dan waktu login, berumur `SESSION_LIFETIME` yang diperpanjang setiap request. Setiap request memeriksa ulang akses hidup identitas itu, jadi akses yang dicabut operator berakhir di request berikutnya. Logout dan back-channel logout mengisi `client_portal_users.sessions_valid_after`, yang mengakhiri semua sesi identitas itu, termasuk di perangkat lain.
+- **Data selalu disaring akses.** Setiap query portal mencari customer lewat `client_portal_users` identitas yang sedang login, tidak pernah lewat id customer dari permintaan.
+- Di laptop: `bun run dev:portal`. Proses ini butuh klien SSO portal sungguhan, jadi belum ikut `bun run dev:stack`.
 
 ## Aturan konsol, agen, dan rilis
 

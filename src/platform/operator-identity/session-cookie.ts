@@ -53,12 +53,3 @@ export function readSession(
         return null;
     }
 }
-
-export function readCookie(request: Request, name: string): string | null {
-    for (const part of (request.headers.get('cookie') ?? '').split(';')) {
-        const position = part.indexOf('=');
-        if (position > 0 && part.slice(0, position).trim() === name)
-            return part.slice(position + 1).trim();
-    }
-    return null;
-}

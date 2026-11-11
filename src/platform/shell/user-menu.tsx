@@ -7,19 +7,10 @@ import {
 import { useQueryClient } from '@tanstack/react-query';
 import { Link2, Link2Off, LogOut } from 'lucide-react';
 import { toast } from 'sonner';
-import { api, errorText, meQuery } from './api.ts';
+import { errorText } from './api-client.ts';
+import { api, meQuery } from './api.ts';
 import type { Operator } from './api.ts';
-
-export function initials(fullName: string): string {
-    const names = fullName.trim().split(/\s+/u).filter(Boolean);
-    const first = names[0];
-    const last = names.at(-1);
-    if (!first || !last) return '';
-    const initial = (name: string) => Array.from(name)[0] ?? '';
-    return (
-        names.length === 1 ? initial(first) : initial(first) + initial(last)
-    ).toUpperCase();
-}
+import { initials } from './initials.ts';
 
 export function UserInfo({ operator }: { operator: Operator }) {
     return (

@@ -125,7 +125,7 @@ and never reject the ULID form silently: that would cut off every installed agen
 | New console setting | CoreERP's pattern in `LicenseTerms` and `RegistrySettings`: a reader that falls back to the environment, a settings screen field, and an audited writer; a secret setting is written by a CLI command that reads stdin |
 | New audited action | `recordAudit()` inside `db.transaction()`. Name it `<subject>.<verb>`, like `operator.created`, `operator.two_factor_enabled`, and `sso.link`. `action` holds 60 characters and `subject_type` 40 |
 | New environment variable | `environmentSchema` in `src/platform/config/index.ts` → the variable list in `README.md` → the deploy environment. Keep CoreERP's name when the console already had one, as `CONSOLE_SSO_*` does |
-| Code ported from CoreERP | It checks what the CoreERP code checks; `oidc.ts` follows CoreERP's [`app/Sso/IdentityProvider.php`](https://github.com/MettaDevs/coreERP/blob/main/apps/control-plane/app/Sso/IdentityProvider.php). A deliberate difference is written in `AGENTS.md`, as the 2FA on the SSO path is |
+| Code ported from CoreERP | It checks what the CoreERP code checks; `src/platform/oidc/index.ts` follows CoreERP's [`app/Sso/IdentityProvider.php`](https://github.com/MettaDevs/coreERP/blob/main/apps/control-plane/app/Sso/IdentityProvider.php). A deliberate difference is written in `AGENTS.md`, as the 2FA on the SSO path is |
 
 ## Traps that already cost time
 

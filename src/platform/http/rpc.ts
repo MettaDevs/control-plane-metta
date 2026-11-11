@@ -71,3 +71,19 @@ export const healthRoutes = () => ({
         .route({ method: 'GET', path: '/up' })
         .handler(() => ({ status: 'ok' })),
 });
+
+const unsafeMethods = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+// Untuk proses dengan cookie sesi SameSite=Strict: setiap request yang mengubah sesuatu wajib JSON. Form dari situs lain
+// tidak bisa mengirim JSON tanpa preflight CORS, yang tidak pernah diizinkan.
+export const jsonBase = base.use(({ context, next }) => {
+    const type = context.request.headers.get('content-type') ?? '';
+    if (
+        unsafeMethods.has(context.request.method) &&
+        !/^application\/json\b/i.test(type)
+    )
+        throw new HttpFailure(415, {
+            message: 'Kirim permintaan ini sebagai JSON.',
+        });
+    return next();
+});

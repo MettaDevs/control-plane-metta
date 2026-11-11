@@ -1,7 +1,7 @@
 import { z } from 'zod';
-import type { SsoSettings } from '../../config/index.ts';
+import type { SsoSettings } from '../config/index.ts';
 
-// Klien OpenID Connect untuk login operator: alur kode otorisasi dengan PKCE S256, ID token RS256 yang diverifikasi
+// Klien OpenID Connect untuk login operator di konsol dan login klien di portal: alur kode otorisasi dengan PKCE S256, ID token RS256 yang diverifikasi
 // terhadap JWKS penyedia, dan logout token dari back-channel logout. Tidak memakai library JWT; yang diperiksa
 // sama dengan konsol CoreERP (app/Sso/IdentityProvider.php).
 const clockLeewaySeconds = 60;
@@ -46,6 +46,7 @@ export const claimsSchema = z.looseObject({
     nbf: z.number().optional(),
     nonce: z.string().optional(),
     email: z.string().optional(),
+    name: z.string().optional(),
 });
 export type Claims = z.infer<typeof claimsSchema>;
 
@@ -63,6 +64,22 @@ export async function pkceChallenge(verifier: string): Promise<string> {
         new TextEncoder().encode(verifier),
     );
     return Buffer.from(digest).toString('base64url');
+}
+
+// Cookie sesi SameSite=Strict tidak dikirim pada navigasi yang dimulai situs penyedia SSO, termasuk redirect
+// lanjutannya. Halaman ini memulai navigasi baru dari situs sendiri, jadi cookie sesi sudah ikut di halaman tujuan.
+export function selfNavigatingPage(location: string) {
+    const target = location.replaceAll('&', '&amp;').replaceAll('"', '&quot;');
+    return {
+        status: 200,
+        headers: { 'Content-Type': 'text/html; charset=UTF-8' },
+        body: new Blob(
+            [
+                `<!doctype html><html lang="id"><head><meta http-equiv="refresh" content="0;url=${target}"><title>Masuk</title></head><body><a href="${target}">Lanjutkan</a></body></html>`,
+            ],
+            { type: 'text/html; charset=UTF-8' },
+        ),
+    };
 }
 
 export class OidcProvider {

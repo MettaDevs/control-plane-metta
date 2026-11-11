@@ -5,7 +5,7 @@ import {
     randomBytes,
 } from 'node:crypto';
 
-// Enkripsi AES-256-GCM: rahasia 2FA dan setelan konsol di database, serta cookie upacara SSO. Kuncinya diturunkan dari APP_KEY per tujuan,
+// Enkripsi AES-256-GCM: rahasia 2FA dan setelan konsol di database, cookie upacara SSO, dan cookie sesi portal. Kuncinya diturunkan dari APP_KEY per tujuan,
 // jadi kunci penanda tangan sesi tidak pernah dipakai langsung untuk enkripsi, dan isi satu tujuan tidak bisa dibuka
 // sebagai tujuan lain.
 export class SecretBox {
@@ -13,7 +13,12 @@ export class SecretBox {
 
     constructor(
         appKey: Buffer,
-        purpose: 'two-factor' | 'sso-ceremony' | 'console-settings',
+        purpose:
+            | 'two-factor'
+            | 'sso-ceremony'
+            | 'console-settings'
+            | 'portal-session'
+            | 'portal-sso-ceremony',
     ) {
         this.key = createHmac('sha256', appKey)
             .update(`operator-${purpose}-encryption`)

@@ -16,6 +16,8 @@ const environmentSchema = z.object({
     SESSION_SECURE_COOKIE: z.enum(['true', 'false']).default('true'),
     // Hasil build peramban untuk layar konsol (`bun run build`). Hanya proses konsol yang membacanya.
     CLIENT_DIR: z.string().min(1).default('dist/client'),
+    // Hasil build peramban untuk layar portal klien. Hanya proses portal yang membacanya.
+    PORTAL_CLIENT_DIR: z.string().min(1).default('dist/portal-client'),
     // SSO operator. Keempatnya diisi bersama, atau dikosongkan bersama untuk mematikan SSO.
     CONSOLE_SSO_ISSUER: z.url().optional(),
     CONSOLE_SSO_CLIENT_ID: z.string().min(1).optional(),

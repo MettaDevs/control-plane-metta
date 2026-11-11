@@ -7,13 +7,17 @@ type Grant = { claims: Record<string, unknown>; challenge: string };
 export class OidcStub {
     readonly clientId = 'console-test-client';
     readonly clientSecret = 'console-test-secret';
-    readonly redirectUri = 'https://console.example.com/sso/callback';
     private readonly grants = new Map<string, Grant>();
     private keys: { kid: string; pair: CryptoKeyPair }[] = [];
     private server!: ReturnType<typeof Bun.serve>;
 
-    static async start(): Promise<OidcStub> {
-        const stub = new OidcStub();
+    // Alamat balik yang didaftarkan klien ini di penyedia; endpoint token menolak alamat lain, seperti penyedia sungguhan.
+    private constructor(readonly redirectUri: string) {}
+
+    static async start(
+        redirectUri = 'https://console.example.com/sso/callback',
+    ): Promise<OidcStub> {
+        const stub = new OidcStub(redirectUri);
         await stub.rotateKey('key-1');
         stub.server = Bun.serve({
             port: 0,

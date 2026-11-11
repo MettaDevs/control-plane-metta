@@ -1,5 +1,5 @@
-// Dibuat `bun scripts/generate-client.ts` dari setiap berkas `.page.tsx`; jangan disunting tangan. `bun run build`
-// dan `bun run dev` menulis ulang berkas ini, dan CI menolak berkas yang tidak mutakhir.
+// Dibuat `bun scripts/generate-client.ts` dari setiap berkas `.console.page.tsx`; jangan disunting tangan.
+// `bun run build` dan `bun run dev` menulis ulang berkas ini, dan CI menolak berkas yang tidak mutakhir.
 import { createRoute, createRouter } from '@tanstack/react-router';
 import { page as customersCustomerCustomerPage } from './customers/customer/customer.console.page.tsx';
 import { page as customersCustomerCustomersPage } from './customers/customer/customers.console.page.tsx';

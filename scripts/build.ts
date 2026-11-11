@@ -16,12 +16,17 @@ import {
     type ClientManifest,
 } from '../src/platform/http/index.ts';
 
-// `bun run build`: proses server ke dist/ (console.js, agent.js, cli.js) dan layar konsol ke dist/client/. Berkas peramban bernama `<nama>-<hash>.<ext>`,
-// dan dist/client/manifest.json mencatat entry, stylesheet, dan setiap berkas yang boleh disajikan server.
-// Berkas hasil generate (src/client.tsx dan kontrak API) dibuat lebih dulu oleh scripts/generate-client.ts.
+// `bun run build`: proses server ke dist/ (console.js, agent.js, portal.js, cli.js), layar konsol ke dist/client/, dan
+// layar portal ke dist/portal-client/. Kedua bundle peramban terpisah: bundle portal tidak membawa halaman maupun bentuk
+// route konsol. Berkas peramban bernama `<nama>-<hash>.<ext>`, dan manifest.json di setiap folder mencatat entry,
+// stylesheet, dan setiap berkas yang boleh disajikan server. Berkas hasil generate (src/client.tsx,
+// src/portal-client.tsx, dan kontrak API) dibuat lebih dulu oleh scripts/generate-client.ts.
 
 const root = resolve(import.meta.dir, '..');
-const clientEntry = join(root, 'src', 'client.tsx');
+export const clientEntries = {
+    console: join(root, 'src', 'client.tsx'),
+    portal: join(root, 'src', 'portal-client.tsx'),
+};
 const posix = (path: string) => path.split(sep).join('/');
 
 // Hash isi berkas dengan panjang yang sama dengan `[hash]` Bun.
@@ -99,6 +104,7 @@ function tailwind(outdir: string, fonts: Set<string>): BunPlugin {
 }
 
 export async function buildClient(
+    entry: string,
     outdir: string,
     options: { production: boolean } = { production: true },
 ): Promise<ClientManifest> {
@@ -106,7 +112,7 @@ export async function buildClient(
     await mkdir(outdir, { recursive: true });
     const fonts = new Set<string>();
     const result = await Bun.build({
-        entrypoints: [clientEntry],
+        entrypoints: [entry],
         outdir,
         target: 'browser',
         format: 'esm',
@@ -157,8 +163,8 @@ export async function buildClient(
 
 export async function buildServer(outdir: string): Promise<void> {
     const result = await Bun.build({
-        entrypoints: ['console.ts', 'agent.ts', 'cli.ts'].map((file) =>
-            join(root, 'src', file),
+        entrypoints: ['console.ts', 'agent.ts', 'portal.ts', 'cli.ts'].map(
+            (file) => join(root, 'src', file),
         ),
         outdir,
         target: 'bun',
@@ -176,8 +182,15 @@ if (import.meta.main) {
     const dist = join(root, 'dist');
     await rm(dist, { recursive: true, force: true });
     await buildServer(dist);
-    const manifest = await buildClient(join(dist, 'client'));
+    const consoleClient = await buildClient(
+        clientEntries.console,
+        join(dist, 'client'),
+    );
+    const portalClient = await buildClient(
+        clientEntries.portal,
+        join(dist, 'portal-client'),
+    );
     console.log(
-        `dist/console.js, dist/agent.js, dist/cli.js, dan dist/client/ (${manifest.files.length} berkas) selesai dibangun.`,
+        `dist/console.js, dist/agent.js, dist/portal.js, dist/cli.js, dist/client/ (${consoleClient.files.length} berkas), dan dist/portal-client/ (${portalClient.files.length} berkas) selesai dibangun.`,
     );
 }

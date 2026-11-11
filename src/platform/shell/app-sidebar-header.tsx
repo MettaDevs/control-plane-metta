@@ -14,7 +14,8 @@ import type { Operator } from './api.ts';
 import { homePath } from './navigation.ts';
 import { useAppearance } from './use-appearance.ts';
 import { SsoLinkDialog, useSsoLinkNotice } from './sso-link.tsx';
-import { initials, UserMenuContent } from './user-menu.tsx';
+import { initials } from './initials.ts';
+import { UserMenuContent } from './user-menu.tsx';
 
 // Header bingkai, disalin dari operations-metta tanpa pencarian halaman dan pemilih ruang kerja: konsol baru punya dua
 // halaman dan tidak punya ruang kerja. Tautan beranda memakai ikon umum, bukan logo merek.

@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { buildClient } from '../../scripts/build.ts';
+import { buildClient, clientEntries } from '../../scripts/build.ts';
 import {
     clientManifestSchema,
     type ClientManifest,
@@ -13,7 +13,7 @@ let manifest: ClientManifest;
 
 beforeAll(async () => {
     outdir = await mkdtemp(join(tmpdir(), 'console-build-'));
-    manifest = await buildClient(outdir);
+    manifest = await buildClient(clientEntries.console, outdir);
 }, 120_000);
 afterAll(() => rm(outdir, { recursive: true, force: true }));
 
@@ -42,3 +42,16 @@ test('the stylesheet carries the Shell classes and loads fonts as separate files
     expect(fonts.length).toBeGreaterThan(0);
     for (const font of fonts) expect(manifest.files).toContain(font);
 });
+
+test('the portal bundle carries its own routes and none of the console', async () => {
+    const portalDir = await mkdtemp(join(tmpdir(), 'portal-build-'));
+    try {
+        const portal = await buildClient(clientEntries.portal, portalDir);
+        expect(portal.script).toMatch(/^portal-client-[a-z0-9]{8}\.js$/);
+        const script = await Bun.file(join(portalDir, portal.script)).text();
+        expect(script).toContain('/api/v1/environments');
+        expect(script).not.toContain('/api/v1/customers');
+    } finally {
+        await rm(portalDir, { recursive: true, force: true });
+    }
+}, 120_000);

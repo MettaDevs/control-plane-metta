@@ -1,16 +1,25 @@
 import { watch } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
-import { buildClient } from './build.ts';
+import { buildClient, clientEntries } from './build.ts';
 
 // `bun run dev`: proses konsol dari src/console.ts dengan `bun --watch`, yang menyalakan ulang server bila kode server
 // berubah, dan build peramban ke dist/client/ yang diulang setiap kali berkas di src/ atau packages/ui/src/ berubah.
+// `bun run dev:portal` sama untuk proses portal (src/portal.ts) dan build peramban portal ke dist/portal-client/.
 // Server membaca manifest yang baru tanpa dinyalakan ulang; muat ulang halaman di peramban untuk melihat hasilnya.
 
 const root = resolve(import.meta.dir, '..');
-const outdir = join(root, 'dist', 'client');
+const target = process.argv[2] === 'portal' ? 'portal' : 'console';
+const outdir = join(
+    root,
+    'dist',
+    target === 'portal' ? 'portal-client' : 'client',
+);
+const shell = join(root, 'src', 'platform', 'shell');
 const generated = new Set([
-    join(root, 'src', 'client.tsx'),
-    join(root, 'src', 'platform', 'shell', 'api-contract.generated.json'),
+    clientEntries.console,
+    clientEntries.portal,
+    join(shell, 'api-contract.generated.json'),
+    join(shell, 'api-contract.portal.generated.json'),
 ]);
 
 let running = false;
@@ -32,7 +41,9 @@ async function rebuild(): Promise<void> {
         });
         if (generate.exitCode !== 0)
             throw new Error('scripts/generate-client.ts gagal.');
-        await buildClient(outdir, { production: false });
+        await buildClient(clientEntries[target], outdir, {
+            production: false,
+        });
         console.log(
             `[dev] build peramban selesai dalam ${Math.round(performance.now() - started)} ms`,
         );
@@ -65,7 +76,7 @@ for (const folder of ['src', join('packages', 'ui', 'src')])
         }, 150);
     });
 
-const server = Bun.spawn(['bun', '--watch', 'src/console.ts'], {
+const server = Bun.spawn(['bun', '--watch', `src/${target}.ts`], {
     cwd: root,
     stdio: ['inherit', 'inherit', 'inherit'],
 });
