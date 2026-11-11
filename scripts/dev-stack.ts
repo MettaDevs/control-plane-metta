@@ -216,7 +216,7 @@ const operationsEnv: Env = {
     SESSION_BACKEND: 'database',
 };
 
-run('Migration control plane', ['bun', 'scripts/migrate.ts'], root, consoleEnv);
+run('Migration control plane', ['bun', 'src/migrate.ts'], root, consoleEnv);
 run(
     'Migration operations',
     ['bun', 'src/migrate.ts'],

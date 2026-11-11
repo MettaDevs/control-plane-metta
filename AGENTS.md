@@ -113,6 +113,20 @@ Layar untuk pemilik dan admin klinik, terpisah dari konsol operator: database, r
 - **Data selalu disaring akses.** Setiap query portal mencari customer lewat `client_portal_users` identitas yang sedang login, tidak pernah lewat id customer dari permintaan.
 - Di laptop: `bun run dev:portal`. Proses ini butuh klien SSO portal sungguhan, jadi belum ikut `bun run dev:stack`.
 
+## Deploy SaaS dev
+
+SaaS dev (server dev1, `/opt/metta-saas-dev`) di-deploy dengan satu perintah dari laptop:
+
+```bash
+ssh dev1 'sudo /opt/metta-saas-dev/deploy.sh'
+```
+
+Tanpa argumen, kedua repo diambil dari `main`; `deploy.sh <ref-control-plane> <ref-operations>` untuk branch, tag,
+atau commit lain. Skrip dan `compose.yaml`-nya ada di `deploy/saas-dev/`, dan setiap deploy memasang ulang keduanya dari
+commit yang di-deploy, jadi perubahan dibuat di repo, bukan di server. Migration database pusat dan database runtime
+dijalankan dari image (`bun dist/migrate.js`), lalu alamat konsol, agen, dan portal diperiksa harus menjawab 200. Secret
+tetap di `secrets/` di server dan tidak pernah ada di repo.
+
 ## Aturan konsol, agen, dan rilis
 
 - Konsol mengelola tenant, lingkungan, dan rilis.

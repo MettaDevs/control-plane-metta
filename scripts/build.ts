@@ -163,9 +163,13 @@ export async function buildClient(
 
 export async function buildServer(outdir: string): Promise<void> {
     const result = await Bun.build({
-        entrypoints: ['console.ts', 'agent.ts', 'portal.ts', 'cli.ts'].map(
-            (file) => join(root, 'src', file),
-        ),
+        entrypoints: [
+            'console.ts',
+            'agent.ts',
+            'portal.ts',
+            'cli.ts',
+            'migrate.ts',
+        ].map((file) => join(root, 'src', file)),
         outdir,
         target: 'bun',
         minify: true,

@@ -1,0 +1,64 @@
+# SaaS dev: control-plane-metta (konsol, agen, portal klien) dan satu host runtime operations-metta, di
+# /opt/metta-saas-dev di server dev1. Dipasang dan dijalankan deploy.sh di folder yang sama; jangan sunting salinannya di
+# server, sunting berkas ini. Port hanya dibuka di 172.17.0.1 untuk Traefik Dokploy (route di
+# /etc/dokploy/traefik/dynamic/operations-metta.yml). Secret ada di secrets/*.env dan secrets/worker.pem (0600, root);
+# berkas ini tidak memuat secret.
+name: metta-saas-dev
+services:
+  cp-db:
+    image: postgres:17
+    restart: unless-stopped
+    env_file: secrets/cp-db.env
+    volumes: [cp-db:/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U controlplane -d controlplane]
+      interval: 5s
+      retries: 20
+  cp-console:
+    image: metta-saas-dev/control-plane:${CP_TAG}
+    restart: unless-stopped
+    env_file: secrets/cp.env
+    command: [bun, dist/console.js]
+    ports: ['172.17.0.1:9101:8000']
+    depends_on: { cp-db: { condition: service_healthy } }
+  cp-portal:
+    image: metta-saas-dev/control-plane:${CP_TAG}
+    restart: unless-stopped
+    env_file: secrets/cp.env
+    command: [bun, dist/portal.js]
+    ports: ['172.17.0.1:9104:8000']
+    depends_on: { cp-db: { condition: service_healthy } }
+  cp-agent:
+    image: metta-saas-dev/control-plane:${CP_TAG}
+    restart: unless-stopped
+    env_file: secrets/cp.env
+    command: [bun, dist/agent.js]
+    ports: ['172.17.0.1:9102:8000']
+    depends_on: { cp-db: { condition: service_healthy } }
+  ops-db:
+    image: postgres:17
+    restart: unless-stopped
+    env_file: secrets/ops-db.env
+    volumes: [ops-db:/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U operations -d runtime]
+      interval: 5s
+      retries: 20
+  ops-app:
+    image: metta-saas-dev/operations:${OPS_TAG}
+    restart: unless-stopped
+    env_file: secrets/ops.env
+    ports: ['172.17.0.1:9103:8000']
+    depends_on: { ops-db: { condition: service_healthy } }
+  ops-worker:
+    image: metta-saas-dev/operations:${OPS_TAG}
+    restart: unless-stopped
+    env_file: [secrets/ops.env, secrets/worker.env]
+    command: [bun, dist/worker.js]
+    volumes: ['./secrets/worker.pem:/run/worker.pem:ro']
+    depends_on:
+      ops-db: { condition: service_healthy }
+      cp-agent: { condition: service_started }
+volumes:
+  cp-db:
+  ops-db:
