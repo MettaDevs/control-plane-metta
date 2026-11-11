@@ -126,7 +126,10 @@ function NewCustomerPage(): ReactNode {
     const hosts = useQuery(
         orpc.listRuntimeHosts.queryOptions({
             select: (response) =>
-                response.runtime_hosts.filter((host) => !host.revoked_at),
+                // Pilihan langsung boleh host khusus, tetapi tidak host yang tidak tersedia.
+                response.runtime_hosts.filter(
+                    (host) => host.availability === 'available',
+                ),
         }),
     );
     const [expiresAt, setExpiresAt] = useState('');
@@ -334,7 +337,7 @@ function NewCustomerPage(): ReactNode {
                                         { value: automatic, label: 'Otomatis' },
                                         ...(hosts.data ?? []).map((host) => ({
                                             value: host.id,
-                                            label: `${host.name} (${String(host.environments)} lingkungan)`,
+                                            label: `${host.name} (${String(host.environments)} lingkungan${host.dedicated ? ', khusus' : ''})`,
                                         })),
                                     ]}
                                     value={runtimeHostId ?? automatic}

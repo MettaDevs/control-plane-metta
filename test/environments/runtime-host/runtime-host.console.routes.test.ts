@@ -109,4 +109,72 @@ describe.skipIf(!process.env.DB_HOST)('runtime host console', () => {
             'runtime_host.revoked',
         ]);
     });
+
+    test('pengaturan host disimpan dengan jejak audit, dan isian yang salah dijawab per field', async () => {
+        const email2 = `hosts-settings-${crypto.randomUUID()}@example.com`;
+        await createOperator(
+            db,
+            { name: 'Operator Pengaturan', email: email2, password },
+            { operatorId: null, ipAddress: null },
+        );
+        const cookie = sessionOf(
+            await call('/login', {
+                method: 'POST',
+                body: { email: email2, password },
+            }),
+        );
+        const host = await addRuntimeHost(db, {
+            name: `host-${crypto.randomUUID()}`,
+            public_key: siteKeyPair().publicKey,
+        });
+        const put = (body: unknown) =>
+            call(`/api/v1/runtime-hosts/${host.id}/settings`, {
+                method: 'PUT',
+                cookie,
+                body,
+            });
+        const settings = {
+            accepts_new: false,
+            capacity: 25,
+            dedicated: true,
+            ring: 'canary',
+        };
+        expect((await put(settings)).status).toBe(204);
+        const listed = hostsSchema
+            .extend({
+                runtime_hosts: z.array(
+                    z.object({
+                        id: z.string(),
+                        accepts_new: z.boolean(),
+                        capacity: z.number().nullable(),
+                        dedicated: z.boolean(),
+                        ring: z.string(),
+                        availability: z.string(),
+                    }),
+                ),
+            })
+            .parse(
+                await (await call('/api/v1/runtime-hosts', { cookie })).json(),
+            )
+            .runtime_hosts.find((row) => row.id === host.id);
+        expect(listed).toMatchObject({
+            ...settings,
+            availability: 'silent',
+        });
+        const [audit] = await pool.unsafe(
+            "select detail from operator_audit_events where action = 'runtime_host.settings_changed' and subject_id = $1",
+            [host.id],
+        );
+        expect(audit?.detail).toEqual(settings);
+
+        const invalid = await put({ ...settings, capacity: 0, ring: 'beta' });
+        expect(invalid.status).toBe(422);
+        expect(
+            Object.keys(
+                z
+                    .object({ errors: z.record(z.string(), z.unknown()) })
+                    .parse(await invalid.json()).errors,
+            ).sort(),
+        ).toEqual(['capacity', 'ring']);
+    });
 });

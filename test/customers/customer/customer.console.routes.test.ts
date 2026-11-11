@@ -22,7 +22,7 @@ describe.skipIf(!process.env.DB_HOST)('customer console', () => {
     async function signIn() {
         if (signedIn) return signedIn;
         // Penempatan lingkungan butuh setidaknya satu host runtime aktif.
-        await addRuntimeHost(db, {
+        const placement = await addRuntimeHost(db, {
             name: `host-customer-${crypto.randomUUID()}`,
             public_key: generateKeyPairSync('rsa', {
                 modulusLength: 2048,
@@ -30,6 +30,10 @@ describe.skipIf(!process.env.DB_HOST)('customer console', () => {
                 privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
             }).publicKey,
         });
+        await db.execute(
+            "update runtime_hosts set reported_at = now() at time zone 'utc' where id = $1",
+            [placement.id],
+        );
         await createOperator(
             db,
             { name: 'Operator Customer', email, password },

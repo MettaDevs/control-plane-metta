@@ -1,5 +1,6 @@
 import { createHash, randomInt } from 'node:crypto';
 import { z } from 'zod';
+import { placeEnvironment } from '../../environments/index.ts';
 import { recordAudit } from '../../platform/audit/index.ts';
 import { type Database, sqlErrorCode } from '../../platform/database/index.ts';
 import { HttpFailure } from '../../platform/http/index.ts';
@@ -113,45 +114,6 @@ const replaySchema = z.object({
 // Customer baru lahir di sini: customer, tenant, lingkungan pertamanya, dan perintah penyiapan untuk worker
 // operations, dalam satu transaksi. Pemilik tenant tercatat sebelum operations membuat apa pun. Admin pertama dibuat
 // worker di database lingkungan dengan password sementara yang hash-nya dibawa parameter operasi.
-// Penempatan lingkungan baru ke host runtime adalah keputusan control plane, bukan host yang kebetulan paling cepat
-// meminta pekerjaan. Operator boleh memilih host aktif; tanpa pilihan, host aktif dengan lingkungan hidup paling
-// sedikit yang dipakai. Host yang dicabut tidak pernah dipilih.
-async function placeEnvironment(
-    db: Database,
-    chosen: string | undefined,
-): Promise<string> {
-    if (chosen) {
-        const host = await db.one(
-            z.object({ id: z.string() }),
-            'select id from runtime_hosts where id = $1 and revoked_at is null',
-            [chosen],
-        );
-        if (!host)
-            throw new HttpFailure(422, {
-                message: 'Periksa isian customer baru.',
-                errors: {
-                    runtime_host_id: [
-                        'Host runtime ini tidak ada atau sudah dicabut.',
-                    ],
-                },
-            });
-        return host.id;
-    }
-    const host = await db.one(
-        z.object({ id: z.string() }),
-        `select h.id from runtime_hosts h where h.revoked_at is null
-         order by (select count(*) from environments e where e.runtime_host_id = h.id and e.purged_at is null), h.name
-         limit 1`,
-    );
-    if (!host)
-        throw new HttpFailure(409, {
-            error: 'no_runtime_host',
-            message:
-                'Belum ada host runtime aktif. Daftarkan host runtime dulu dengan perintah add-runtime-host.',
-        });
-    return host.id;
-}
-
 export async function createCustomer(
     db: Database,
     actor: { operatorId: string; ipAddress: string | null },
