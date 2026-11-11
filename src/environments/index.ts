@@ -1,3 +1,4 @@
+export { environmentDatabaseName } from './environment-database.ts';
 export {
     addRuntimeHost,
     RuntimeHostRejected,
