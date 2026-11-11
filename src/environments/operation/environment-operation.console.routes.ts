@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { ConsoleSession } from '../../platform/operator-identity/index.console.ts';
 import {
     requestConversion,
+    requestCopy,
     requestMigration,
     requestRestore,
 } from './environment-operation.service.ts';
@@ -19,9 +20,16 @@ export function environmentOperationConsoleRoutes(session: ConsoleSession) {
                 z.object({
                     params: z.object({ environment: z.uuid() }),
                     body: z.object({
-                        operation: z.enum(['migrate', 'convert', 'restore']),
+                        operation: z.enum([
+                            'migrate',
+                            'convert',
+                            'restore',
+                            'copy',
+                        ]),
                         // Tanggal berakhir baru, wajib saat memulihkan demo.
                         expires_at: z.iso.date().optional(),
+                        // Nama sandbox baru, saat menyalin produksi.
+                        name: z.string().trim().min(1).max(100).optional(),
                     }),
                 }),
             )
@@ -46,6 +54,13 @@ export function environmentOperationConsoleRoutes(session: ConsoleSession) {
                             actor,
                             environment,
                             input.body.expires_at,
+                        );
+                    case 'copy':
+                        return requestCopy(
+                            context.db,
+                            actor,
+                            environment,
+                            input.body.name ?? 'Sandbox',
                         );
                     default: {
                         const unknown: never = input.body.operation;

@@ -1,5 +1,6 @@
 import { createHash, randomInt } from 'node:crypto';
 import { z } from 'zod';
+import { environmentDatabaseName } from '../../environments/index.ts';
 import { recordAudit } from '../../platform/audit/index.ts';
 import { type Database, sqlErrorCode } from '../../platform/database/index.ts';
 import { HttpFailure } from '../../platform/http/index.ts';
@@ -91,15 +92,6 @@ function temporaryPassword(): string {
     ).join('');
 }
 
-// Nama database lingkungan: dari slug dan jenisnya supaya mudah dikenali operator, ditambah potongan id supaya tidak
-// pernah bertabrakan, dalam batas 63 karakter PostgreSQL.
-function databaseName(slug: string, kind: string, environmentId: string) {
-    const suffix = environmentId.replaceAll('-', '').slice(-10);
-    return `env_${slug.replaceAll('-', '_')}_${kind}`
-        .slice(0, 63 - suffix.length - 1)
-        .concat('_', suffix);
-}
-
 const replaySchema = z.object({
     request_hash: z.string(),
     client_id: z.string(),
@@ -154,7 +146,7 @@ export async function createCustomer(
             admin: Bun.randomUUIDv7(),
         };
         const password = temporaryPassword();
-        const database = databaseName(
+        const database = environmentDatabaseName(
             input.slug,
             input.environment.kind,
             ids.environment,
@@ -285,6 +277,7 @@ const operationNameSchema = z.enum([
     'expire',
     'restore',
     'purge',
+    'copy',
 ]);
 const operationStatusSchema = z.enum([
     'requested',
