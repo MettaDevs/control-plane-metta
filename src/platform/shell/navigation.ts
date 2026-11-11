@@ -21,11 +21,6 @@ export const navigation: NavigationGroup[] = [
         icon: Building2,
         items: [
             { id: 'customers', label: 'Daftar customer', href: '/customers' },
-            {
-                id: 'new-customer',
-                label: 'Customer baru',
-                href: '/customers/new',
-            },
         ],
     },
     {
