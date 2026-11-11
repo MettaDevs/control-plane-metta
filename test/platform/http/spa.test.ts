@@ -58,7 +58,7 @@ describe('console screens and the API share one server', () => {
             '/login',
             '/login?two_factor=1',
             '/customers',
-            '/catalog',
+            '/catalog/modules',
             '/halaman/yang/tidak/ada?q=1',
         ]) {
             const response = await get(path, html);

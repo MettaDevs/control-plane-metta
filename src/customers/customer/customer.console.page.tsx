@@ -17,7 +17,7 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@control-plane-metta/ui/dialog';
-import { FormControl } from '@control-plane-metta/ui/form-control';
+import { FormControl, FormGrid } from '@control-plane-metta/ui/form-control';
 import { RecordActionBar } from '@control-plane-metta/ui/record-action-bar';
 import { useConfirmation } from '@control-plane-metta/ui/use-confirmation';
 import {
@@ -212,27 +212,29 @@ function RestoreDialog({
                             keadaannya sebelum dihapus beserta seluruh isinya.
                         </DialogDescription>
                     </DialogHeader>
-                    <DialogBody className="flex flex-col gap-3">
-                        {demo && (
-                            <FormControl error={error ?? undefined}>
-                                <DatePicker
-                                    label="Demo berakhir"
-                                    required
-                                    min={tomorrow()}
-                                    value={expiresAt}
-                                    onValueChange={setExpiresAt}
-                                    portalContainer={content}
-                                />
-                            </FormControl>
-                        )}
-                        {!demo && error && (
-                            <p
-                                role="alert"
-                                className="text-sm text-destructive"
-                            >
-                                {error}
-                            </p>
-                        )}
+                    <DialogBody>
+                        <FormGrid columns={1}>
+                            {demo && (
+                                <FormControl error={error ?? undefined}>
+                                    <DatePicker
+                                        label="Demo berakhir"
+                                        required
+                                        min={tomorrow()}
+                                        value={expiresAt}
+                                        onValueChange={setExpiresAt}
+                                        portalContainer={content}
+                                    />
+                                </FormControl>
+                            )}
+                            {!demo && error && (
+                                <p
+                                    role="alert"
+                                    className="text-sm text-destructive"
+                                >
+                                    {error}
+                                </p>
+                            )}
+                        </FormGrid>
                     </DialogBody>
                     <DialogFooter>
                         <DialogAction
@@ -366,13 +368,13 @@ function EnvironmentSection({
                             title={migrateUnavailable ?? undefined}
                             onClick={() =>
                                 void ask('migrate', {
-                                    title: 'Perbarui skema database?',
-                                    description: `Worker di ${environment.runtime_host ?? 'host runtime'} menjalankan migration yang belum terpasang di ${environment.database_name ?? 'database ini'}, sampai skemanya sama dengan versi aplikasi di host itu. Migration tidak dapat dibatalkan setelah berjalan.`,
-                                    confirmLabel: 'Perbarui skema',
+                                    title: 'Update database lingkungan ini?',
+                                    description: `Struktur tabel di ${environment.database_name ?? 'database ini'} disamakan dengan versi aplikasi yang sedang berjalan di ${environment.runtime_host ?? 'host runtime'}. Data tidak dihapus. Setelah berjalan, perubahan ini tidak dapat dibatalkan.`,
+                                    confirmLabel: 'Update database',
                                 })
                             }
                         >
-                            Perbarui skema
+                            Update database
                         </Button>
                     </div>
                 )}

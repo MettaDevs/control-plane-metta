@@ -16,7 +16,7 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@control-plane-metta/ui/dialog';
-import { FormControl } from '@control-plane-metta/ui/form-control';
+import { FormControl, FormGrid } from '@control-plane-metta/ui/form-control';
 import { Select } from '@control-plane-metta/ui/select';
 import { useConfirmation } from '@control-plane-metta/ui/use-confirmation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -176,52 +176,55 @@ function EntitlementDialog({
                             atau dicabut.
                         </DialogDescription>
                     </DialogHeader>
-                    <DialogBody className="flex flex-col gap-4">
-                        {!editing && (
-                            <FormControl
-                                error={
-                                    errors.module_id?.[0] ??
-                                    errors.package_id?.[0]
-                                }
-                                hint={
-                                    catalog.data && !catalog.data.modules.length
-                                        ? 'Belum ada module. Module muncul setelah host runtime melaporkannya.'
-                                        : 'Susunan module memberi semua module di dalamnya sekaligus. Module yang sudah dimiliki tidak diubah.'
-                                }
-                            >
-                                <Select
-                                    label="Module"
-                                    required
-                                    searchPlaceholder="Cari module…"
-                                    items={items}
-                                    value={choice}
-                                    onValueChange={(value) =>
-                                        setChoice(value ?? '')
+                    <DialogBody>
+                        <FormGrid columns={1}>
+                            {!editing && (
+                                <FormControl
+                                    error={
+                                        errors.module_id?.[0] ??
+                                        errors.package_id?.[0]
                                     }
+                                    hint={
+                                        catalog.data &&
+                                        !catalog.data.modules.length
+                                            ? 'Belum ada module. Module muncul setelah host runtime melaporkannya.'
+                                            : 'Susunan module memberi semua module di dalamnya sekaligus. Module yang sudah dimiliki tidak diubah.'
+                                    }
+                                >
+                                    <Select
+                                        label="Module"
+                                        required
+                                        searchPlaceholder="Cari module…"
+                                        items={items}
+                                        value={choice}
+                                        onValueChange={(value) =>
+                                            setChoice(value ?? '')
+                                        }
+                                        portalContainer={content}
+                                    />
+                                </FormControl>
+                            )}
+                            <FormControl
+                                error={errors.ends_on?.[0]}
+                                hint="Hari terakhir module boleh dipakai. Kosongkan untuk tanpa batas."
+                            >
+                                <DatePicker
+                                    label="Berakhir"
+                                    min={dateValue(new Date())}
+                                    value={endsOn}
+                                    onValueChange={setEndsOn}
                                     portalContainer={content}
                                 />
                             </FormControl>
-                        )}
-                        <FormControl
-                            error={errors.ends_on?.[0]}
-                            hint="Hari terakhir module boleh dipakai. Kosongkan untuk tanpa batas."
-                        >
-                            <DatePicker
-                                label="Berakhir"
-                                min={dateValue(new Date())}
-                                value={endsOn}
-                                onValueChange={setEndsOn}
-                                portalContainer={content}
-                            />
-                        </FormControl>
-                        {message && (
-                            <p
-                                role="alert"
-                                className="text-sm text-destructive"
-                            >
-                                {message}
-                            </p>
-                        )}
+                            {message && (
+                                <p
+                                    role="alert"
+                                    className="text-sm text-destructive"
+                                >
+                                    {message}
+                                </p>
+                            )}
+                        </FormGrid>
                     </DialogBody>
                     <DialogFooter>
                         <DialogAction type="submit" disabled={pending}>

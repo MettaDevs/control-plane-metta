@@ -52,7 +52,7 @@ export function operationName(operation: Operation['operation']): string {
         case 'provision':
             return 'Penyiapan';
         case 'migrate':
-            return 'Pembaruan skema';
+            return 'Update database';
         case 'convert':
             return 'Jadikan produksi';
         case 'expire':
