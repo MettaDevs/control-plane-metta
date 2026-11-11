@@ -51,6 +51,11 @@ describe.skipIf(!process.env.DB_HOST)('worker environment queue', () => {
             name: `host-${crypto.randomUUID()}`,
             public_key: keys.publicKey,
         });
+        // Host yang belum pernah melapor tidak dipilih penempatan; fixture ini dianggap baru saja melapor.
+        await db.execute(
+            "update runtime_hosts set reported_at = now() at time zone 'utc' where id = $1",
+            [id],
+        );
         const call = (path: string, body: unknown = {}) =>
             app.handle(
                 signedRequest({
@@ -295,7 +300,11 @@ describe.skipIf(!process.env.DB_HOST)('worker environment queue', () => {
             `with load as (
                 select h.id, (select count(*) from environments e
                               where e.runtime_host_id = h.id and e.purged_at is null and e.id <> $1) as environments
-                from runtime_hosts h where h.revoked_at is null
+                from runtime_hosts h
+                where h.revoked_at is null and not h.dedicated and h.accepts_new
+                  and h.reported_at >= now() at time zone 'utc' - interval '15 minutes'
+                  and (h.capacity is null or (select count(*) from environments e
+                       where e.runtime_host_id = h.id and e.purged_at is null and e.id <> $1) < h.capacity)
              )
              select (select environments from load
                      where id = (select runtime_host_id from environments where id = $1)) as placed_load,
@@ -1008,5 +1017,80 @@ describe.skipIf(!process.env.DB_HOST)('worker environment queue', () => {
             (await worker.call('/api/worker/v1/report', { release: '' }))
                 .status,
         ).toBe(422);
+    });
+
+    test('penempatan menolak host yang tidak menerima, penuh, atau tidak melapor, dan host khusus hanya lewat pilihan langsung', async () => {
+        const actor = { operatorId: await operator(), ipAddress: null };
+        const input = (runtimeHostId?: string) => ({
+            legal_name: 'PT Klinik Pengaturan Host',
+            slug: `atur-${crypto.randomUUID().slice(-12)}`,
+            admin: { name: 'Admin', email: 'admin@atur.test' },
+            environment: { kind: 'production' as const, name: 'Produksi' },
+            ...(runtimeHostId ? { runtime_host_id: runtimeHostId } : {}),
+        });
+        const reason = (runtimeHostId: string) =>
+            createCustomer(
+                db,
+                actor,
+                crypto.randomUUID(),
+                input(runtimeHostId),
+            ).then(
+                () => null,
+                (error: unknown) =>
+                    z
+                        .object({
+                            body: z.object({
+                                errors: z.object({
+                                    runtime_host_id: z.array(z.string()),
+                                }),
+                            }),
+                        })
+                        .parse(error).body.errors.runtime_host_id[0],
+            );
+        const paused = await host();
+        await db.execute(
+            'update runtime_hosts set accepts_new = false where id = $1',
+            [paused.id],
+        );
+        expect(await reason(paused.id)).toContain('tidak menerima');
+
+        const full = await host();
+        await db.execute(
+            'update runtime_hosts set capacity = 1 where id = $1',
+            [full.id],
+        );
+        expect(await reason(full.id)).toBeNull();
+        expect(await reason(full.id)).toContain('kapasitas');
+
+        const silent = await host();
+        await db.execute(
+            "update runtime_hosts set reported_at = now() at time zone 'utc' - interval '1 hour' where id = $1",
+            [silent.id],
+        );
+        expect(await reason(silent.id)).toContain('tidak melapor');
+
+        // Host khusus yang paling sepi tetap tidak dipilih penempatan otomatis, tetapi boleh dipilih langsung.
+        const dedicated = await host();
+        await host();
+        await db.execute(
+            'update runtime_hosts set dedicated = true where id = $1',
+            [dedicated.id],
+        );
+        const automatic = await createCustomer(
+            db,
+            actor,
+            crypto.randomUUID(),
+            input(),
+        );
+        const placedOn = async (environmentId: string) =>
+            (
+                await pool.unsafe(
+                    'select runtime_host_id from environments where id = $1',
+                    [environmentId],
+                )
+            )[0]?.runtime_host_id;
+        for (const excluded of [paused.id, full.id, silent.id, dedicated.id])
+            expect(await placedOn(automatic.environment_id)).not.toBe(excluded);
+        expect(await reason(dedicated.id)).toBeNull();
     });
 });

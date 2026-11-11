@@ -62,6 +62,138 @@ export async function addRuntimeHost(
     });
 }
 
+// Host yang laporan terakhirnya lebih tua dari ini dianggap berhenti melapor. Worker melapor setiap lima menit secara
+// bawaan, jadi tiga laporan yang hilang berturut-turut sudah cukup untuk berhenti menempatkan lingkungan baru di sana.
+export const reportStaleMinutes = 15;
+
+export const hostRings = ['canary', 'early', 'general'] as const;
+
+// Keadaan penempatan host h, dihitung di satu tempat supaya daftar host, penempatan otomatis, dan pilihan operator
+// memakai aturan yang sama: dicabut, berhenti melapor (atau belum pernah), tidak menerima lingkungan baru, penuh,
+// atau tersedia.
+const liveEnvironments =
+    '(select count(*) from environments e where e.runtime_host_id = h.id and e.purged_at is null)';
+const availability = `case
+    when h.revoked_at is not null then 'revoked'
+    when h.reported_at is null
+        or h.reported_at < now() at time zone 'utc' - make_interval(mins => ${reportStaleMinutes}) then 'silent'
+    when not h.accepts_new then 'paused'
+    when h.capacity is not null and ${liveEnvironments} >= h.capacity then 'full'
+    else 'available' end`;
+export const hostAvailabilities = [
+    'revoked',
+    'silent',
+    'paused',
+    'full',
+    'available',
+] as const;
+export type HostAvailability = (typeof hostAvailabilities)[number];
+
+function unavailableReason(
+    availability: Exclude<HostAvailability, 'available'>,
+): string {
+    switch (availability) {
+        case 'revoked':
+            return 'Host runtime ini sudah dicabut.';
+        case 'silent':
+            return `Host runtime ini tidak melapor dalam ${String(reportStaleMinutes)} menit terakhir, jadi lingkungan baru tidak ditempatkan di sana.`;
+        case 'paused':
+            return 'Host runtime ini sedang tidak menerima lingkungan baru.';
+        case 'full':
+            return 'Host runtime ini sudah mencapai kapasitasnya.';
+        default: {
+            const unknown: never = availability;
+            return unknown;
+        }
+    }
+}
+
+// Penempatan lingkungan baru adalah keputusan control plane, bukan host yang kebetulan paling cepat meminta pekerjaan.
+// Operator boleh memilih host yang tersedia, termasuk host khusus. Tanpa pilihan, host tersedia yang bukan host khusus
+// dengan lingkungan hidup paling sedikit yang dipakai.
+export async function placeEnvironment(
+    db: Database,
+    chosen: string | undefined,
+): Promise<string> {
+    if (chosen) {
+        const host = await db.one(
+            z.object({
+                id: z.string(),
+                availability: z.enum(hostAvailabilities),
+            }),
+            `select h.id, ${availability} as availability from runtime_hosts h where h.id = $1`,
+            [chosen],
+        );
+        const refuse = (reason: string): never => {
+            throw new HttpFailure(422, {
+                message: 'Periksa isian customer baru.',
+                errors: { runtime_host_id: [reason] },
+            });
+        };
+        if (!host) return refuse('Host runtime ini tidak ada.');
+        if (host.availability !== 'available')
+            return refuse(unavailableReason(host.availability));
+        return host.id;
+    }
+    const host = await db.one(
+        z.object({ id: z.string() }),
+        `select h.id from runtime_hosts h where not h.dedicated and ${availability} = 'available'
+         order by ${liveEnvironments}, h.name limit 1`,
+    );
+    if (!host)
+        throw new HttpFailure(409, {
+            error: 'no_runtime_host',
+            message:
+                'Tidak ada host runtime yang tersedia untuk penempatan otomatis: semua dicabut, khusus, penuh, tidak menerima lingkungan baru, atau tidak melapor.',
+        });
+    return host.id;
+}
+
+export const runtimeHostSettingsSchema = z.strictObject({
+    accepts_new: z.boolean(),
+    capacity: z
+        .number('Isi kapasitas dengan angka, atau kosongkan untuk tanpa batas.')
+        .int('Kapasitas berupa bilangan bulat.')
+        .positive('Kapasitas paling sedikit 1.')
+        .max(100000)
+        .nullable(),
+    dedicated: z.boolean(),
+    ring: z.enum(hostRings),
+});
+export type RuntimeHostSettings = z.infer<typeof runtimeHostSettingsSchema>;
+
+export async function updateRuntimeHostSettings(
+    db: Database,
+    actor: { operatorId: string; ipAddress: string | null },
+    hostId: string,
+    settings: RuntimeHostSettings,
+): Promise<void> {
+    await db.transaction(async () => {
+        const updated = await db.execute(
+            'update runtime_hosts set accepts_new = $2, capacity = $3, dedicated = $4, ring = $5 where id = $1 and revoked_at is null',
+            [
+                hostId,
+                settings.accepts_new,
+                settings.capacity,
+                settings.dedicated,
+                settings.ring,
+            ],
+        );
+        if (updated === 0)
+            throw new HttpFailure(404, {
+                error: 'runtime_host_not_found',
+                message: 'Host runtime tidak ditemukan atau sudah dicabut.',
+            });
+        await recordAudit(db, {
+            ...actor,
+            action: 'runtime_host.settings_changed',
+            subjectType: 'runtime_host',
+            subjectId: hostId,
+            detail: settings,
+        });
+    });
+}
+
 const hostRowSchema = z.object({
     id: z.string(),
     name: z.string(),
@@ -70,6 +202,11 @@ const hostRowSchema = z.object({
     revoked_at: z.string().nullable(),
     reported_release: z.string().nullable(),
     reported_at: z.string().nullable(),
+    accepts_new: z.boolean(),
+    capacity: z.number().nullable(),
+    dedicated: z.boolean(),
+    ring: z.enum(hostRings),
+    availability: z.enum(hostAvailabilities),
     environments: z.number(),
     open_operations: z.number(),
 });
@@ -82,6 +219,7 @@ export async function listRuntimeHosts(db: Database) {
             to_char(h.created_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
             to_char(h.revoked_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as revoked_at, h.reported_release,
             to_char(h.reported_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as reported_at,
+            h.accepts_new, h.capacity, h.dedicated, h.ring, ${availability} as availability,
             (select count(*)::int from environments e where e.runtime_host_id = h.id and e.deleted_at is null)
                 as environments,
             (select count(*)::int from environment_operations o join environments e on e.id = o.environment_id

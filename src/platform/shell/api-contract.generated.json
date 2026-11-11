@@ -253,6 +253,18 @@
             "route": { "method": "GET", "path": "/api/v1/runtime-hosts" }
         }
     },
+    "updateRuntimeHostSettings": {
+        "~orpc": {
+            "errorMap": {},
+            "meta": {},
+            "route": {
+                "method": "PUT",
+                "path": "/api/v1/runtime-hosts/{host}/settings",
+                "inputStructure": "detailed",
+                "successStatus": 204
+            }
+        }
+    },
     "revokeRuntimeHost": {
         "~orpc": {
             "errorMap": {},
