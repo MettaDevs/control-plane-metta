@@ -172,15 +172,16 @@ describe.skipIf(!process.env.DB_HOST)('susunan module', () => {
         });
         expect(await errorsOf(afterDelete)).toEqual(['package_id']);
         const [audit] = await pool.unsafe(
-            `select array_agg(action order by occurred_at, action) as actions from operator_audit_events
+            `select array_agg(action order by action) as actions from operator_audit_events
              where subject_id in ($1, $2) and action like any (array['catalog.package_%', 'tenant.package_%'])`,
             [id, tenantId],
         );
+        // occurred_at tercatat per detik, jadi yang diperiksa himpunannya, bukan urutannya.
         expect(audit?.actions).toEqual([
-            'catalog.package_created',
             'catalog.package_changed',
-            'tenant.package_entitled',
+            'catalog.package_created',
             'catalog.package_deleted',
+            'tenant.package_entitled',
         ]);
     });
 });
