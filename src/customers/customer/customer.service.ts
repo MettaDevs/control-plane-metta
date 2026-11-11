@@ -280,8 +280,8 @@ export async function createCustomer(
     });
 }
 
-const environmentKindSchema = z.enum(['production', 'sandbox', 'demo']);
-const environmentStatusSchema = z.enum([
+export const environmentKindSchema = z.enum(['production', 'sandbox', 'demo']);
+export const environmentStatusSchema = z.enum([
     'provisioning',
     'copying',
     'active',
@@ -290,7 +290,7 @@ const environmentStatusSchema = z.enum([
     'suspended',
     'soft_deleted',
 ]);
-const operationNameSchema = z.enum([
+export const operationNameSchema = z.enum([
     'provision',
     'migrate',
     'convert',
@@ -299,7 +299,7 @@ const operationNameSchema = z.enum([
     'purge',
     'sync_entitlements',
 ]);
-const operationStatusSchema = z.enum([
+export const operationStatusSchema = z.enum([
     'requested',
     'running',
     'succeeded',

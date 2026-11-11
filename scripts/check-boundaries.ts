@@ -8,14 +8,16 @@ import ts from 'typescript';
 //   2. Berkas satu audiens tidak meng-import berkas audiens lain.
 //   3. Proses di akar src/ hanya memuat berkas audiensnya sendiri, dihitung atas seluruh rantai impornya, supaya
 //      rute konsol tidak pernah ada di proses agen atau portal walaupun lewat perantara. src/client.tsx adalah entry
-//      peramban layar konsol, jadi ia dihitung sebagai proses konsol.
+//      peramban layar konsol dan src/portal-client.tsx entry peramban layar portal, jadi keduanya dihitung sebagai
+//      proses audiensnya. Berkas di rantai itu juga tidak meng-import berkas proses audiens lain, walau hanya tipenya:
+//      klien API konsol, yang bertipe router konsol, tidak pernah ikut bundle portal.
 //   4. Hanya test yang meng-import berkas proses. Kode peramban boleh meng-import tipenya (`import type`).
 //   5. Test hanya ada di test/, di folder yang sama dengan letak kode yang diujinya di src/ atau scripts/. Bantuan test
 //      ada di test/support/. Kode di src/ dan scripts/ tidak meng-import apa pun dari test/. Test sebuah package ada
 //      di test/ package itu, mengikuti folder src/-nya.
-//   6. Kode peramban (src/client.tsx, src/platform/shell/, dan setiap .tsx) dan kode server tidak saling meng-import.
-//      Kode peramban hanya boleh mengambil tipe dari kode server, yang hilang saat dibundel.
-//   7. Hanya src/client.tsx yang meng-import halaman (.page.tsx).
+//   6. Kode peramban (kedua entry peramban, src/platform/shell/, dan setiap .tsx) dan kode server tidak saling
+//      meng-import. Kode peramban hanya boleh mengambil tipe dari kode server, yang hilang saat dibundel.
+//   7. Hanya entry peramban yang meng-import halaman (.page.tsx).
 //   8. Package di packages/ tidak meng-import src/.
 const audiences = ['console', 'agent', 'portal'] as const;
 type Audience = (typeof audiences)[number];
@@ -27,7 +29,10 @@ const tests = join(root, 'test');
 const packages = join(root, 'packages');
 const support = join(tests, 'support') + sep;
 const shell = join(src, 'platform', 'shell') + sep;
-const clientEntry = join(src, 'client.tsx');
+const clientEntries = new Map<string, Audience>([
+    [join(src, 'client.tsx'), 'console'],
+    [join(src, 'portal-client.tsx'), 'portal'],
+]);
 const extension = /\.(ts|tsx|js|mjs|cjs)$/;
 
 function files(directory: string): string[] {
@@ -46,7 +51,7 @@ const isTest = (path: string) => roles(path).includes('test');
 const isProcess = (path: string) => dirname(path) === src && !isTest(path);
 const isPage = (path: string) => path.endsWith('.page.tsx');
 const isBrowser = (path: string) =>
-    path === clientEntry || path.startsWith(shell) || path.endsWith('.tsx');
+    clientEntries.has(path) || path.startsWith(shell) || path.endsWith('.tsx');
 
 // Nama fitur dibuang lebih dulu, jadi fitur bernama `agent` tetap dibaca dari perannya.
 function audienceOf(path: string): Audience | null {
@@ -54,7 +59,8 @@ function audienceOf(path: string): Audience | null {
 }
 
 function processAudience(path: string): Audience | null {
-    if (path === clientEntry) return 'console';
+    const entry = clientEntries.get(path);
+    if (entry) return entry;
     const name = basename(path).replace(extension, '');
     return audiences.find((audience) => audience === name) ?? null;
 }
@@ -196,7 +202,7 @@ for (const file of checked) {
     for (const { path, line, typeOnly } of found) {
         const at = `${shown(file)}:${line} imports ${shown(path)}`;
         const unit = unitOf(path);
-        const routedPage = file === clientEntry && isPage(path);
+        const routedPage = clientEntries.has(file) && isPage(path);
         if (unit && unit !== ownUnit && !isDoor(unit, path) && !routedPage)
             violations.push(
                 `${at}; outside ${shown(unit)}/ import only its index.ts or index.<audience>.ts.`,
@@ -208,9 +214,9 @@ for (const file of checked) {
             );
         if (isProcess(path) && !isTest(file) && !(browser && typeOnly))
             violations.push(`${at}; only tests may import a process file.`);
-        if (isPage(path) && file !== clientEntry)
+        if (isPage(path) && !clientEntries.has(file))
             violations.push(
-                `${at}; only src/client.tsx imports pages, through the generated route tree.`,
+                `${at}; only src/client.tsx and src/portal-client.tsx import pages, through the generated route tree.`,
             );
         if (!path.startsWith(src + sep)) continue;
         if (browser && !isBrowser(path) && !typeOnly)
@@ -239,6 +245,13 @@ for (const entry of checked.filter(isProcess)) {
             violations.push(
                 `${shown(entry)} loads ${shown(file)}; ${allowed ? `the ${allowed} process loads only ${allowed} files` : 'a process without an audience loads no audience files'}.`,
             );
+        for (const { path } of imports.get(file) ?? []) {
+            const other = isProcess(path) ? processAudience(path) : null;
+            if (allowed && other && other !== allowed)
+                violations.push(
+                    `${shown(entry)} loads ${shown(file)}, which imports ${shown(path)}; the ${allowed} process does not load code typed by the ${other} process.`,
+                );
+        }
     }
 }
 

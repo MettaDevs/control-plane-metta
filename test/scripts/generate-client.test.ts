@@ -3,7 +3,8 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import {
-    clientEntry,
+    audiences,
+    bundles,
     pageFiles,
     readPage,
     staleFiles,
@@ -16,20 +17,27 @@ test('the committed client entry and API contract match what the generator write
     expect(await staleFiles()).toEqual([]);
 });
 
-test('the route tree imports every page, and each import resolves', async () => {
-    const pages = pageFiles();
-    expect(pages.length).toBeGreaterThan(0);
-    const source = await Bun.file(clientEntry).text();
-    const imported = [...source.matchAll(/from '(\.[^']+\.page\.tsx)'/g)].map(
-        (match) => Bun.resolveSync(match[1]!, dirname(clientEntry)),
-    );
-    expect(imported.sort()).toEqual([...pages].sort());
-    for (const page of pages.map(readPage))
-        // Segmen berupa teks kecil, atau parameter route TanStack seperti `$site`.
-        expect(page.path).toMatch(
-            /^(\/([a-z0-9-]+|\$[a-z][a-zA-Z0-9]*))+$|^\/$/,
-        );
-});
+// Setiap bundle hanya memuat halaman prosesnya sendiri: halaman konsol tidak pernah ada di bundle portal.
+test.each(audiences)(
+    'the %s route tree imports exactly its own pages, and each import resolves',
+    async (audience) => {
+        const pages = pageFiles(audience);
+        expect(pages.length).toBeGreaterThan(0);
+        for (const page of pages)
+            expect(page).toEndWith(`.${audience}.page.tsx`);
+        const entry = bundles[audience].entry;
+        const source = await Bun.file(entry).text();
+        const imported = [
+            ...source.matchAll(/from '(\.[^']+\.page\.tsx)'/g),
+        ].map((match) => Bun.resolveSync(match[1]!, dirname(entry)));
+        expect(imported.sort()).toEqual([...pages].sort());
+        for (const page of pages.map(readPage))
+            // Segmen berupa teks kecil, atau parameter route TanStack seperti `$site`.
+            expect(page.path).toMatch(
+                /^(\/([a-z0-9-]+|\$[a-z][a-zA-Z0-9]*))+$|^\/$/,
+            );
+    },
+);
 
 test('a page must declare its path and layout as literals through definePage', async () => {
     const file = join(scratch, 'broken.page.tsx');

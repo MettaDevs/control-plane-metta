@@ -144,6 +144,11 @@ describe('check-boundaries', () => {
         'src/platform/shell/index.ts': `export * from './api.ts';`,
         'src/platform/shell/api.ts': `import type { router } from '../../console.ts';`,
         'src/sites/site/site.console.page.tsx': `import '../../platform/shell/index.ts';`,
+        'src/portal.ts': `export const router = 1;`,
+        'src/portal-client.tsx': `import './sites/site/site.portal.page.tsx'; import './platform/shell/index.portal.ts';`,
+        'src/platform/shell/index.portal.ts': `export * from './api.portal.ts';`,
+        'src/platform/shell/api.portal.ts': `import type { router } from '../../portal.ts';`,
+        'src/sites/site/site.portal.page.tsx': `import '../../platform/shell/index.portal.ts';`,
     };
 
     test('accepts the browser entry loading pages and the shell taking only types from the server', () => {
@@ -168,7 +173,7 @@ describe('check-boundaries', () => {
             'src/sites/site/site.console.page.tsx:1 imports src/sites/site/site.service.ts; browser code takes only types from server code (import type).',
         );
         expect(result.output).toContain(
-            'src/sites/site/site.console.page.tsx:1 imports src/sites/site/other.console.page.tsx; only src/client.tsx imports pages',
+            'src/sites/site/site.console.page.tsx:1 imports src/sites/site/other.console.page.tsx; only src/client.tsx and src/portal-client.tsx import pages',
         );
         expect(result.output).toContain(
             'src/sites/site/site.service.ts:1 imports src/platform/shell/index.ts; server code must not import browser code.',
@@ -184,6 +189,17 @@ describe('check-boundaries', () => {
         expect(result.code).toBe(1);
         expect(result.output).toContain(
             'src/client.tsx loads src/sites/site/site.agent.page.tsx; the console process loads only console files.',
+        );
+    });
+
+    test('rejects the portal browser entry loading code typed by the console process', () => {
+        const result = check({
+            ...screens,
+            'src/sites/site/site.portal.page.tsx': `import '../../platform/shell/index.ts';`,
+        });
+        expect(result.code).toBe(1);
+        expect(result.output).toContain(
+            'src/portal-client.tsx loads src/platform/shell/api.ts, which imports src/console.ts; the portal process does not load code typed by the console process.',
         );
     });
 

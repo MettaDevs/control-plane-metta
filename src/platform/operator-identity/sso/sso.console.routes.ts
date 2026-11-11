@@ -1,11 +1,20 @@
 import { z } from 'zod';
 import type { Config } from '../../config/index.ts';
-import { base, type Context, HttpFailure } from '../../http/index.ts';
+import {
+    base,
+    type Context,
+    HttpFailure,
+    readCookie,
+} from '../../http/index.ts';
+import {
+    OidcProvider,
+    randomUrlToken,
+    selfNavigatingPage,
+    SsoFailure,
+} from '../../oidc/index.ts';
 import { RateLimiter } from '../../rate-limit/index.ts';
 import { revokeSessions } from '../operator.service.ts';
-import { OidcProvider, randomUrlToken, SsoFailure } from './oidc.ts';
 import { SecretBox } from '../../secret-box/index.ts';
-import { readCookie } from '../session-cookie.ts';
 import {
     type ConsoleSession,
     twoFactorWindowSeconds,
@@ -38,22 +47,6 @@ const callbackInput = z.object({
         error: z.string().optional(),
     }),
 });
-
-// Cookie sesi SameSite=Strict tidak dikirim pada navigasi yang dimulai situs penyedia SSO, termasuk redirect
-// lanjutannya. Halaman ini memulai navigasi baru dari konsol sendiri, jadi cookie sesi sudah ikut di halaman tujuan.
-function navigate(location: string) {
-    const target = location.replaceAll('&', '&amp;').replaceAll('"', '&quot;');
-    return {
-        status: 200,
-        headers: { 'Content-Type': 'text/html; charset=UTF-8' },
-        body: new Blob(
-            [
-                `<!doctype html><html lang="id"><head><meta http-equiv="refresh" content="0;url=${target}"><title>Masuk</title></head><body><a href="${target}">Lanjutkan</a></body></html>`,
-            ],
-            { type: 'text/html; charset=UTF-8' },
-        ),
-    };
-}
 
 export function ssoRoutes(config: Config, session: ConsoleSession) {
     const settings = config.sso;
@@ -110,7 +103,7 @@ export function ssoRoutes(config: Config, session: ConsoleSession) {
     }
 
     const fail = (reason: string, mode: Ceremony['mode'] = 'login') =>
-        navigate(
+        selfNavigatingPage(
             `${mode === 'link' ? '/' : '/login'}?sso_error=${encodeURIComponent(reason)}`,
         );
 
@@ -185,7 +178,7 @@ export function ssoRoutes(config: Config, session: ConsoleSession) {
                             return fail('already-linked', 'link');
                         throw error;
                     }
-                    return navigate('/?sso=linked');
+                    return selfNavigatingPage('/?sso=linked');
                 }
                 const linked = await findLinkedOperator(context.db, identity);
                 if (!linked) return fail('not-linked');
@@ -197,7 +190,7 @@ export function ssoRoutes(config: Config, session: ConsoleSession) {
                         linked.operator.id,
                         twoFactorWindowSeconds,
                     );
-                    return navigate('/login?two_factor=1');
+                    return selfNavigatingPage('/login?two_factor=1');
                 }
                 issue(
                     context,
@@ -205,7 +198,7 @@ export function ssoRoutes(config: Config, session: ConsoleSession) {
                     linked.operator.id,
                     config.SESSION_LIFETIME * 60,
                 );
-                return navigate('/');
+                return selfNavigatingPage('/');
             }),
         // Menautkan akun SSO ke operator yang sedang login, dengan password diketik ulang. Browser lalu dibawa ke
         // authorize_url, dan tautannya dibuat di /sso/callback.

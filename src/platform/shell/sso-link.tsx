@@ -13,7 +13,8 @@ import { FormControl, FormGrid } from '@control-plane-metta/ui/form-control';
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { toast } from 'sonner';
-import { api, ApiError, errorText } from './api.ts';
+import { ApiError, errorText } from './api-client.ts';
+import { api } from './api.ts';
 import { PasswordInput } from './password-input.tsx';
 
 // Alasan yang dikirim /sso/callback lewat `?sso_error=` sesudah upacara tautan gagal.

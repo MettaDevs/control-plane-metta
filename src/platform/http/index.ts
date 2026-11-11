@@ -1,5 +1,6 @@
 export { abort, HttpFailure } from './errors.ts';
-export { base, healthRoutes, ok, type Context } from './rpc.ts';
+export { readCookie, setCookie, type CookieOptions } from './cookies.ts';
+export { base, healthRoutes, jsonBase, ok, type Context } from './rpc.ts';
 export { createApplication, serve } from './serve.ts';
 export {
     clientAssetPrefix,

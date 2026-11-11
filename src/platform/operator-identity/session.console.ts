@@ -1,5 +1,11 @@
 import type { Config } from '../config/index.ts';
-import { base, type Context, HttpFailure } from '../http/index.ts';
+import {
+    type Context,
+    HttpFailure,
+    jsonBase,
+    readCookie,
+    setCookie as writeCookie,
+} from '../http/index.ts';
 import { RateLimiter } from '../rate-limit/index.ts';
 import {
     confirmPassword,
@@ -8,7 +14,6 @@ import {
 } from './operator.service.ts';
 import {
     type CookiePurpose,
-    readCookie,
     readSession,
     signSession,
 } from './session-cookie.ts';
@@ -17,7 +22,6 @@ import {
 export const attemptLimit = { maxAttempts: 5, decaySeconds: 60 };
 // Sama dengan konsol CoreERP: kode 2FA harus dimasukkan dalam lima menit sesudah password benar.
 export const twoFactorWindowSeconds = 5 * 60;
-const unsafeMethods = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
 // Percobaan yang gagal dihitung per kunci; hasil percobaan yang berhasil dikembalikan.
 export async function guardAttempts<T>(
@@ -58,11 +62,10 @@ export function consoleSession(config: Config) {
         maxAge: number,
         options: { sameSite?: 'Strict' | 'Lax'; path?: string } = {},
     ) {
-        const secure =
-            config.SESSION_SECURE_COOKIE === 'true' ? '; Secure' : '';
-        context.setCookies.push(
-            `${name}=${value}; Path=${options.path ?? '/'}; Max-Age=${maxAge}; HttpOnly; SameSite=${options.sameSite ?? 'Strict'}${secure}`,
-        );
+        writeCookie(context, name, value, maxAge, {
+            ...options,
+            secure: config.SESSION_SECURE_COOKIE === 'true',
+        });
     }
 
     function issue(
@@ -95,19 +98,8 @@ export function consoleSession(config: Config) {
             : null;
     };
 
-    // Cookie sesi SameSite=Strict, dan setiap request yang mengubah sesuatu wajib JSON. Form dari situs lain tidak bisa
-    // mengirim JSON tanpa preflight CORS, yang tidak pernah diizinkan konsol.
-    const consoleBase = base.use(({ context, next }) => {
-        const type = context.request.headers.get('content-type') ?? '';
-        if (
-            unsafeMethods.has(context.request.method) &&
-            !/^application\/json\b/i.test(type)
-        )
-            throw new HttpFailure(415, {
-                message: 'Kirim permintaan ini sebagai JSON.',
-            });
-        return next();
-    });
+    // Cookie sesi SameSite=Strict, dan setiap request yang mengubah sesuatu wajib JSON.
+    const consoleBase = jsonBase;
 
     // Setiap akun di tabel operators adalah operator, jadi yang tidak punya sesi sah mendapat 401. Tidak ada akun
     // customer yang bisa login di sini untuk menerima 403.

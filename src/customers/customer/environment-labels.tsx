@@ -1,12 +1,25 @@
 import { DataTableText } from '@control-plane-metta/ui/data-table';
 import type { ReactNode } from 'react';
-import type { ApiOutput } from '../../platform/shell/index.ts';
+import type { z } from 'zod';
+import type {
+    environmentKindSchema,
+    environmentStatusSchema,
+    operationNameSchema,
+    operationStatusSchema,
+} from './customer.service.ts';
 
-type Environment =
-    ApiOutput<'listCustomers'>['customers'][number]['environments'][number];
-type Operation = NonNullable<Environment['operation']>;
+// Tipe dari schema service, bukan dari klien API konsol, supaya layar portal bisa memakai label yang sama tanpa ikut
+// memuat bingkai konsol.
+type Kind = z.infer<typeof environmentKindSchema>;
+type Status = z.infer<typeof environmentStatusSchema>;
+type Operation = {
+    operation: z.infer<typeof operationNameSchema>;
+    status: z.infer<typeof operationStatusSchema>;
+    step: string | null;
+    failure_message: string | null;
+};
 
-export function kindLabel(kind: Environment['kind']): string {
+export function kindLabel(kind: Kind): string {
     switch (kind) {
         case 'production':
             return 'Produksi';
@@ -21,7 +34,7 @@ export function kindLabel(kind: Environment['kind']): string {
     }
 }
 
-export function environmentStatus(status: Environment['status']): {
+export function environmentStatus(status: Status): {
     label: string;
     variant: 'default' | 'secondary' | 'destructive' | 'outline';
 } {
@@ -91,7 +104,7 @@ export function operationStatus(status: Operation['status']): string {
 export function EnvironmentName({
     environment,
 }: {
-    environment: Pick<Environment, 'kind' | 'name'>;
+    environment: { kind: Kind; name: string };
 }): ReactNode {
     const kind = kindLabel(environment.kind);
     return environment.name === kind ? (
@@ -107,7 +120,7 @@ export function EnvironmentName({
 export function OperationCell({
     operation,
 }: {
-    operation: Environment['operation'];
+    operation: Operation | null;
 }): ReactNode {
     if (!operation) return <DataTableText>-</DataTableText>;
     return (
