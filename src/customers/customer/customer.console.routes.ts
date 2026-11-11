@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { Config } from '../../platform/config/index.ts';
 import { HttpFailure } from '../../platform/http/index.ts';
 import type { ConsoleSession } from '../../platform/operator-identity/index.console.ts';
 import {
@@ -8,6 +9,7 @@ import {
     findCustomer,
     listCustomers,
 } from './customer.service.ts';
+import { inviteToPortal } from '../portal-access/portal-access.service.ts';
 
 // Body dan header diperiksa handler, bukan oRPC, supaya isian yang salah dijawab 422 dengan pesan per field. Tipe di
 // sini hanya untuk pemanggil di layar.
@@ -16,7 +18,7 @@ const createCustomerInput = z.object({
     body: z.custom<z.input<typeof customerInputSchema>>(),
 });
 
-export function customerConsoleRoutes(session: ConsoleSession) {
+export function customerConsoleRoutes(config: Config, session: ConsoleSession) {
     const { operatorProcedure } = session;
     return {
         listCustomers: operatorProcedure
@@ -60,15 +62,32 @@ export function customerConsoleRoutes(session: ConsoleSession) {
                         message: 'Periksa isian customer baru.',
                         errors: customerInputErrors(body.error),
                     });
-                return createCustomer(
+                const actor = {
+                    operatorId: context.operator.id,
+                    ipAddress: context.clientAddress,
+                };
+                const created = await createCustomer(
                     context.db,
-                    {
-                        operatorId: context.operator.id,
-                        ipAddress: context.clientAddress,
-                    },
+                    actor,
                     key.data,
                     body.data,
                 );
+                // Admin pertama langsung diundang ke portal klien bila portal disetel. Hanya pada jawaban pertama:
+                // permintaan ulang dengan kunci yang sama (password sementara null) tidak mengirim email kedua.
+                const portalInvitation =
+                    config.portal && created.temporary_password !== null
+                        ? await inviteToPortal(
+                              context.db,
+                              config,
+                              actor,
+                              created.client_id,
+                              {
+                                  recipient_email: body.data.admin.email,
+                                  recipient_name: body.data.admin.name,
+                              },
+                          )
+                        : null;
+                return { ...created, portal_invitation: portalInvitation };
             }),
     };
 }
