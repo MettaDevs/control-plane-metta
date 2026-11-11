@@ -10,6 +10,7 @@
         "test": "bun test",
         "build": "bun scripts/generate-client.ts && bun scripts/build.ts",
         "dev": "bun scripts/dev.ts",
+        "dev:stack": "bun scripts/dev-stack.ts",
         "start:console": "bun src/console.ts",
         "start:agent": "bun src/agent.ts",
         "format": "prettier --write src packages scripts test .github package.json tsconfig.json",
