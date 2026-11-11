@@ -129,8 +129,8 @@ async function enqueueScheduled(db: Database, hostId: string): Promise<void> {
     }
 }
 
-// Operasi tertua yang boleh diambil host ini, atau null: milik lingkungan yang sudah terikat ke host ini (didahulukan),
-// atau yang belum terikat ke host mana pun. Lingkungan terikat ke host pertama yang mengambil operasinya.
+// Operasi tertua milik lingkungan yang ditempatkan di host ini, atau null. Penempatan diputuskan control plane saat
+// lingkungan dibuat, jadi host tidak pernah mengambil lingkungan yang bukan miliknya.
 export async function claimOperation(
     db: Database,
     hostId: string,
@@ -145,8 +145,8 @@ export async function claimOperation(
                 join environments e on e.id = o.environment_id
                 where o.status = 'requested' and e.hosting = 'provider'
                   and (e.deleted_at is null or o.operation in ('restore', 'purge'))
-                  and (e.runtime_host_id is null or e.runtime_host_id = $1)
-                order by e.runtime_host_id is null, o.requested_at, o.id limit 1
+                  and e.runtime_host_id = $1
+                order by o.requested_at, o.id limit 1
                 for update of o, e skip locked
              )
              update environment_operations o set status = 'running', started_at = ${now},
@@ -155,12 +155,7 @@ export async function claimOperation(
              returning o.id, o.operation, o.environment_id, o.parameters, ${iso('o.lease_until')} as lease_until`,
             [hostId, leaseMinutes],
         );
-        if (!claimed) return null;
-        await db.execute(
-            `update environments set runtime_host_id = $2, updated_at = ${now} where id = $1 and runtime_host_id is null`,
-            [claimed.environment_id, hostId],
-        );
-        return claimed;
+        return claimed ?? null;
     });
 }
 

@@ -7,6 +7,10 @@ import {
     recordStep,
     stepSchema,
 } from './environment-operation.service.ts';
+import {
+    hostReportSchema,
+    recordHostReport,
+} from '../runtime-host/host-report.service.ts';
 
 const workerError = (status: number, error: string) =>
     new HttpFailure(status, { error });
@@ -87,6 +91,18 @@ export function environmentOperationAgentRoutes(config: Config) {
                 );
                 if (!result) throw workerError(409, 'operation_not_held');
                 return result;
+            }),
+        // Laporan berkala host: rilis yang dijalankan dan keadaan setiap lingkungan yang alamatnya tercatat di runtime-nya.
+        reportRuntimeHost: signedWorker
+            .route({ method: 'POST', path: '/api/worker/v1/report' })
+            .handler(async ({ context }) => {
+                const report = hostReportSchema.safeParse(context.json);
+                if (!report.success) throw workerError(422, 'report_invalid');
+                return recordHostReport(
+                    context.db,
+                    context.host.id,
+                    report.data,
+                );
             }),
     };
 }

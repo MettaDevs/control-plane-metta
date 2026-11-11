@@ -68,6 +68,8 @@ const hostRowSchema = z.object({
     public_key: z.string(),
     created_at: z.string(),
     revoked_at: z.string().nullable(),
+    reported_release: z.string().nullable(),
+    reported_at: z.string().nullable(),
     environments: z.number(),
     open_operations: z.number(),
 });
@@ -78,7 +80,8 @@ export async function listRuntimeHosts(db: Database) {
         hostRowSchema,
         `select h.id, h.name, h.public_key,
             to_char(h.created_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
-            to_char(h.revoked_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as revoked_at,
+            to_char(h.revoked_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as revoked_at, h.reported_release,
+            to_char(h.reported_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as reported_at,
             (select count(*)::int from environments e where e.runtime_host_id = h.id and e.deleted_at is null)
                 as environments,
             (select count(*)::int from environment_operations o join environments e on e.id = o.environment_id

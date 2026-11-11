@@ -10,7 +10,7 @@ import { FormControl, FormGrid } from '@control-plane-metta/ui/form-control';
 import { Input } from '@control-plane-metta/ui/input';
 import { RecordActionBar } from '@control-plane-metta/ui/record-action-bar';
 import { Select } from '@control-plane-metta/ui/select';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { Copy, TriangleAlert } from 'lucide-react';
 import { useState } from 'react';
@@ -29,6 +29,8 @@ type Created = ApiOutput<'createCustomer'>;
 type Kind = 'production' | 'demo';
 
 const formId = 'new-customer';
+// Pilihan host runtime yang menyerahkan penempatan ke control plane.
+const automatic = 'auto';
 
 function tomorrow(): string {
     const date = new Date();
@@ -119,6 +121,14 @@ function NewCustomerPage(): ReactNode {
     const [adminName, setAdminName] = useState('');
     const [adminEmail, setAdminEmail] = useState('');
     const [kind, setKind] = useState<Kind>('production');
+    // Kosong berarti control plane memilih host aktif dengan lingkungan paling sedikit.
+    const [runtimeHostId, setRuntimeHostId] = useState<string | null>(null);
+    const hosts = useQuery(
+        orpc.listRuntimeHosts.queryOptions({
+            select: (response) =>
+                response.runtime_hosts.filter((host) => !host.revoked_at),
+        }),
+    );
     const [expiresAt, setExpiresAt] = useState('');
     const [errors, setErrors] = useState<Record<string, string[]>>({});
     const [message, setMessage] = useState<string | null>(null);
@@ -211,6 +221,9 @@ function NewCustomerPage(): ReactNode {
                                     kind === 'demo'
                                         ? { kind, expires_at: expiresAt }
                                         : { kind },
+                                ...(runtimeHostId
+                                    ? { runtime_host_id: runtimeHostId }
+                                    : {}),
                             },
                         });
                     }}
@@ -304,6 +317,32 @@ function NewCustomerPage(): ReactNode {
                                             value === 'demo'
                                                 ? 'demo'
                                                 : 'production',
+                                        )
+                                    }
+                                />
+                            </div>
+                        </FormControl>
+                        <FormControl
+                            error={error('runtime_host_id')}
+                            hint="Server tempat database klinik ini dibuat. Biarkan Otomatis supaya dipilih server aktif yang paling sedikit isinya."
+                        >
+                            <div data-error-field="runtime_host_id">
+                                <Select
+                                    label="Host runtime"
+                                    searchPlaceholder="Cari…"
+                                    items={[
+                                        { value: automatic, label: 'Otomatis' },
+                                        ...(hosts.data ?? []).map((host) => ({
+                                            value: host.id,
+                                            label: `${host.name} (${String(host.environments)} lingkungan)`,
+                                        })),
+                                    ]}
+                                    value={runtimeHostId ?? automatic}
+                                    onValueChange={(value) =>
+                                        setRuntimeHostId(
+                                            value && value !== automatic
+                                                ? value
+                                                : null,
                                         )
                                     }
                                 />

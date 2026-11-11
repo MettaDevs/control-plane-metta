@@ -247,24 +247,78 @@ describe.skipIf(!process.env.DB_HOST)('worker environment queue', () => {
         });
     });
 
-    test('lingkungan yang belum terikat diikat ke host pertama yang mengambil operasinya', async () => {
-        const worker = await host();
-        const claim = await worker.call('/api/worker/v1/operations/claim');
-        // Antrean bersama di database test bisa berisi operasi dari berkas test lain; yang diperiksa adalah ikatannya.
-        if (claim.status === 204) {
-            const created = await customer();
-            const retry = claimedSchema.parse(
-                await (
-                    await worker.call('/api/worker/v1/operations/claim')
-                ).json(),
-            );
-            expect(retry.operation.id).toBe(created.operation_id);
-        }
-        const [bound] = await pool.unsafe(
-            "select count(*)::int as count from environment_operations o join environments e on e.id = o.environment_id where o.status = 'running' and e.runtime_host_id = $1",
-            [worker.id],
+    test('control plane menempatkan lingkungan ke host pilihan atau host aktif tersepi, dan host lain tidak mengambilnya', async () => {
+        const chosen = await host();
+        const bystander = await host();
+        const actor = { operatorId: await operator(), ipAddress: null };
+        const input = (slug: string, runtimeHostId?: string) => ({
+            legal_name: 'PT Klinik Penempatan',
+            slug,
+            admin: { name: 'Admin', email: 'admin@penempatan.test' },
+            environment: { kind: 'production' as const, name: 'Produksi' },
+            ...(runtimeHostId ? { runtime_host_id: runtimeHostId } : {}),
+        });
+        const placed = await createCustomer(
+            db,
+            actor,
+            crypto.randomUUID(),
+            input(`tempat-${crypto.randomUUID().slice(-12)}`, chosen.id),
         );
-        expect(bound?.count).toBe(1);
+        const state = async (environmentId: string, operationId: string) =>
+            (
+                await pool.unsafe(
+                    'select e.runtime_host_id, o.status from environments e join environment_operations o on o.environment_id = e.id where e.id = $1 and o.id = $2',
+                    [environmentId, operationId],
+                )
+            )[0];
+        expect(
+            await state(placed.environment_id, placed.operation_id),
+        ).toMatchObject({ runtime_host_id: chosen.id, status: 'requested' });
+        // Host lain boleh mengambil operasi lain di database test bersama, tetapi tidak pernah yang ini.
+        for (let attempt = 0; attempt < 5; attempt++)
+            await bystander.call('/api/worker/v1/operations/claim');
+        expect(
+            await state(placed.environment_id, placed.operation_id),
+        ).toMatchObject({ status: 'requested' });
+        const claimed = claimedSchema.parse(
+            await (await chosen.call('/api/worker/v1/operations/claim')).json(),
+        );
+        expect(claimed.operation.id).toBe(placed.operation_id);
+
+        const automatic = await createCustomer(
+            db,
+            actor,
+            crypto.randomUUID(),
+            input(`tempat-${crypto.randomUUID().slice(-12)}`),
+        );
+        const [fairness] = await pool.unsafe(
+            `with load as (
+                select h.id, (select count(*) from environments e
+                              where e.runtime_host_id = h.id and e.purged_at is null and e.id <> $1) as environments
+                from runtime_hosts h where h.revoked_at is null
+             )
+             select (select environments from load
+                     where id = (select runtime_host_id from environments where id = $1)) as placed_load,
+                    (select min(environments) from load) as lightest`,
+            [automatic.environment_id],
+        );
+        expect(fairness?.placed_load).toBe(fairness?.lightest);
+
+        await db.execute(
+            "update runtime_hosts set revoked_at = now() at time zone 'utc' where id = $1",
+            [bystander.id],
+        );
+        await expect(
+            createCustomer(
+                db,
+                actor,
+                crypto.randomUUID(),
+                input(`tempat-${crypto.randomUUID().slice(-12)}`, bystander.id),
+            ),
+        ).rejects.toMatchObject({
+            status: 422,
+            body: { errors: { runtime_host_id: [expect.any(String)] } },
+        });
     });
 
     test('migrate hanya untuk lingkungan yang sudah disiapkan, diambil host lingkungannya, dan ditutup seperti penyiapan', async () => {
@@ -901,5 +955,58 @@ describe.skipIf(!process.env.DB_HOST)('worker environment queue', () => {
         await claimOwn();
         expect(await purges(environmentId)).toBe(2);
         expect(await purges(production.environment_id)).toBe(0);
+    });
+
+    test('laporan host menyimpan rilis dan keadaan lingkungan milik host itu saja', async () => {
+        const worker = await host();
+        const other = await host();
+        const mine = await customer(worker.id);
+        const theirs = await customer(other.id);
+        const [names] = await pool.unsafe(
+            `select
+                (select database_name from environments where id = $1) as mine,
+                (select database_name from environments where id = $2) as theirs,
+                (select t.slug from environments e join tenants t on t.id = e.tenant_id where e.id = $1) as slug`,
+            [mine.environment_id, theirs.environment_id],
+        );
+        const entry = (database: string, healthy: boolean) => ({
+            tenant_slug: names?.slug,
+            kind: 'production',
+            database,
+            healthy,
+            problem: healthy ? null : 'Database tidak bisa dibuka.',
+            size_bytes: 1234,
+            migrations: { core: '0013_environment_route_disabled.sql' },
+        });
+        const response = await worker.call('/api/worker/v1/report', {
+            release: '0.3.0',
+            environments: [
+                entry(names?.mine, true),
+                entry(names?.theirs, false),
+                entry('env_tidak_dikenal', true),
+            ],
+        });
+        expect(response.status).toBe(200);
+        expect(await response.json()).toEqual({ matched: 1, unknown: 2 });
+        const [state] = await pool.unsafe(
+            `select
+                (select reported_release from runtime_hosts where id = $1) as release,
+                (select reported_healthy from environments where id = $2) as mine,
+                (select reported_size_bytes from environments where id = $2) as size,
+                (select reported_migrations ->> 'core' from environments where id = $2) as core,
+                (select reported_at is null from environments where id = $3) as theirs_untouched`,
+            [worker.id, mine.environment_id, theirs.environment_id],
+        );
+        expect({ ...state }).toEqual({
+            release: '0.3.0',
+            mine: true,
+            size: '1234',
+            core: '0013_environment_route_disabled.sql',
+            theirs_untouched: true,
+        });
+        expect(
+            (await worker.call('/api/worker/v1/report', { release: '' }))
+                .status,
+        ).toBe(422);
     });
 });

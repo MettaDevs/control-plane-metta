@@ -57,6 +57,8 @@ export const customerInputSchema = z.object({
         ],
         required('Pilih lingkungan pertama: produksi atau demo.'),
     ),
+    // Host runtime tempat lingkungan pertama ditempatkan. Kosong berarti control plane memilih sendiri.
+    runtime_host_id: z.uuid('Pilih host runtime dari daftar.').optional(),
 });
 export type CustomerInput = z.infer<typeof customerInputSchema>;
 
@@ -111,6 +113,45 @@ const replaySchema = z.object({
 // Customer baru lahir di sini: customer, tenant, lingkungan pertamanya, dan perintah penyiapan untuk worker
 // operations, dalam satu transaksi. Pemilik tenant tercatat sebelum operations membuat apa pun. Admin pertama dibuat
 // worker di database lingkungan dengan password sementara yang hash-nya dibawa parameter operasi.
+// Penempatan lingkungan baru ke host runtime adalah keputusan control plane, bukan host yang kebetulan paling cepat
+// meminta pekerjaan. Operator boleh memilih host aktif; tanpa pilihan, host aktif dengan lingkungan hidup paling
+// sedikit yang dipakai. Host yang dicabut tidak pernah dipilih.
+async function placeEnvironment(
+    db: Database,
+    chosen: string | undefined,
+): Promise<string> {
+    if (chosen) {
+        const host = await db.one(
+            z.object({ id: z.string() }),
+            'select id from runtime_hosts where id = $1 and revoked_at is null',
+            [chosen],
+        );
+        if (!host)
+            throw new HttpFailure(422, {
+                message: 'Periksa isian customer baru.',
+                errors: {
+                    runtime_host_id: [
+                        'Host runtime ini tidak ada atau sudah dicabut.',
+                    ],
+                },
+            });
+        return host.id;
+    }
+    const host = await db.one(
+        z.object({ id: z.string() }),
+        `select h.id from runtime_hosts h where h.revoked_at is null
+         order by (select count(*) from environments e where e.runtime_host_id = h.id and e.purged_at is null), h.name
+         limit 1`,
+    );
+    if (!host)
+        throw new HttpFailure(409, {
+            error: 'no_runtime_host',
+            message:
+                'Belum ada host runtime aktif. Daftarkan host runtime dulu dengan perintah add-runtime-host.',
+        });
+    return host.id;
+}
+
 export async function createCustomer(
     db: Database,
     actor: { operatorId: string; ipAddress: string | null },
@@ -146,6 +187,7 @@ export async function createCustomer(
             };
         }
 
+        const runtimeHostId = await placeEnvironment(db, input.runtime_host_id);
         const ids = {
             client: Bun.randomUUIDv7(),
             tenant: Bun.randomUUIDv7(),
@@ -179,8 +221,8 @@ export async function createCustomer(
         }
         await db.execute(
             `insert into environments (id, tenant_id, kind, name, slug, database_name, status, expires_at,
-                outbound_allowed, hosting, created_by, created_at, updated_at)
-             values ($1, $2, $3, $4, $5, $6, 'provisioning', $7, $8, 'provider', $9, now() at time zone 'utc',
+                outbound_allowed, hosting, runtime_host_id, created_by, created_at, updated_at)
+             values ($1, $2, $3, $4, $5, $6, 'provisioning', $7, $8, 'provider', $10, $9, now() at time zone 'utc',
                 now() at time zone 'utc')`,
             [
                 ids.environment,
@@ -194,6 +236,7 @@ export async function createCustomer(
                     : null,
                 input.environment.kind === 'production',
                 actor.operatorId,
+                runtimeHostId,
             ],
         );
         // Bentuk parameter ini adalah permintaan penyiapan operations-metta (provisionRequestSchema).
@@ -364,6 +407,14 @@ const customerDetailSchema = z.object({
                     created_at: z.string().nullable(),
                     // Lingkungan yang dihapus lunak tetap tampil sampai isinya boleh dibuang.
                     purge_after: z.string().nullable(),
+                    // Laporan terakhir worker host-nya; null sampai worker pertama kali melapor.
+                    reported_migrations: z
+                        .record(z.string(), z.string())
+                        .nullable(),
+                    reported_size_bytes: z.number().nullable(),
+                    reported_healthy: z.boolean().nullable(),
+                    reported_problem: z.string().nullable(),
+                    reported_at: z.string().nullable(),
                     operations: z.array(
                         z.object({
                             id: z.string(),
@@ -398,6 +449,9 @@ export async function findCustomer(db: Database, clientId: string) {
                     'provisioned', e.schema_migrated_at is not null,
                     'expires_at', to_char(e.expires_at, 'YYYY-MM-DD'),
                     'created_at', ${iso('e.created_at')}, 'purge_after', ${iso('e.purge_after')},
+                    'reported_migrations', e.reported_migrations, 'reported_size_bytes', e.reported_size_bytes,
+                    'reported_healthy', e.reported_healthy, 'reported_problem', e.reported_problem,
+                    'reported_at', ${iso('e.reported_at')},
                     'operations', coalesce((select json_agg(json_build_object(
                         'id', o.id, 'operation', o.operation, 'status', o.status, 'step', o.step,
                         'failure_message', o.failure_message, 'requested_by', op.name,

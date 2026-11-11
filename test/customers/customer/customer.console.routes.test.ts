@@ -1,5 +1,7 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import { z } from 'zod';
+import { generateKeyPairSync } from 'node:crypto';
+import { addRuntimeHost } from '../../../src/environments/index.ts';
 import { Database } from '../../../src/platform/database/index.ts';
 import { createOperator } from '../../../src/platform/operator-identity/index.ts';
 import { consoleTestApp } from '../../support/console-app.ts';
@@ -19,6 +21,15 @@ describe.skipIf(!process.env.DB_HOST)('customer console', () => {
     let signedIn: string | undefined;
     async function signIn() {
         if (signedIn) return signedIn;
+        // Penempatan lingkungan butuh setidaknya satu host runtime aktif.
+        await addRuntimeHost(db, {
+            name: `host-customer-${crypto.randomUUID()}`,
+            public_key: generateKeyPairSync('rsa', {
+                modulusLength: 2048,
+                publicKeyEncoding: { type: 'spki', format: 'pem' },
+                privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+            }).publicKey,
+        });
         await createOperator(
             db,
             { name: 'Operator Customer', email, password },
@@ -296,7 +307,8 @@ describe.skipIf(!process.env.DB_HOST)('customer console', () => {
         expect(environment).toMatchObject({
             id: result.environment_id,
             status: 'provisioning',
-            runtime_host: null,
+            // Ditempatkan control plane saat dibuat, sebelum worker mana pun mengambilnya.
+            runtime_host: expect.stringMatching(/^host-/),
         });
         expect(environment?.database_name).toStartWith('env_');
         expect(environment?.operations).toEqual([

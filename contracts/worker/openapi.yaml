@@ -23,8 +23,8 @@ info:
     ## Antrean
 
     - Satu lingkungan punya paling banyak satu operasi terbuka.
-    - Lingkungan terikat ke host pertama yang mengambil operasinya; host lain tidak pernah melihat operasinya lagi.
-      Operasi lingkungan yang sudah terikat ke host itu didahulukan.
+    - Control plane menempatkan setiap lingkungan ke satu host saat lingkungan itu dibuat. Claim hanya membawa operasi
+      lingkungan yang ditempatkan di host pemanggilnya.
     - Tenggat 30 menit, diperpanjang setiap langkah `running`. Tenggat yang lewat ditutup gagal saat antrean dibaca, dan
       lingkungannya menjadi `degraded`. Langkah dan penutupan dari worker yang tidak lagi memegang operasi dijawab
       `409 operation_not_held`; worker itu harus berhenti.
@@ -63,6 +63,13 @@ info:
     - `purge`: membuang database lingkungan secara permanen (`DROP DATABASE ... WITH (FORCE)`). Alamatnya tetap
       tercatat nonaktif sebagai nisan. Worker menolak membuang database yang masih ditunjuk alamat aktif. Database null
       (database bersama runtime) tidak pernah dibuang. Parameternya `PurgeParameters`.
+    ## Laporan host
+
+    Worker melapor setiap beberapa menit, dan sekali saat mulai, lewat `POST /report`: rilis image yang ia jalankan, dan
+    untuk setiap alamat lingkungan yang tercatat di runtime-nya: migration terakhir per pemilik, ukuran database, dan
+    sehat atau tidak beserta sebabnya. Control plane menyimpan laporan terakhir saja. Lingkungan dicocokkan hanya di
+    antara milik host itu, lewat nama database, atau lewat slug tenant dan jenis untuk database bersama; alamat yang
+    tidak dikenal dihitung sebagai `unknown`, tidak dibuat.
 servers:
   - url: /api/worker/v1
 paths:
@@ -101,6 +108,43 @@ paths:
           description: Tidak ada operasi yang boleh diambil.
         '401':
           $ref: '#/components/responses/SignatureInvalid'
+  /report:
+    post:
+      operationId: reportRuntimeHost
+      summary: Melaporkan rilis host dan keadaan lingkungan-lingkungannya
+      parameters:
+        - $ref: '#/components/parameters/SignatureInput'
+        - $ref: '#/components/parameters/Signature'
+        - $ref: '#/components/parameters/ContentDigest'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HostReport'
+      responses:
+        '200':
+          description: Laporan tersimpan.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [matched, unknown]
+                properties:
+                  matched:
+                    type: integer
+                  unknown:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/SignatureInvalid'
+        '422':
+          description: Isi laporan tidak sah.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: report_invalid
   /operations/{operation}/steps:
     post:
       operationId: recordEnvironmentStep
@@ -318,6 +362,46 @@ components:
           description: Database lingkungan; null berarti database bersama runtime, yang tidak pernah dibuang.
           type: [string, 'null']
           pattern: '^[a-z][a-z0-9_]{0,62}$'
+    HostReport:
+      type: object
+      additionalProperties: false
+      required: [release, environments]
+      properties:
+        release:
+          description: Rilis image operations-metta yang dijalankan host ini.
+          type: string
+          minLength: 1
+          maxLength: 80
+        environments:
+          type: array
+          maxItems: 5000
+          items:
+            type: object
+            additionalProperties: false
+            required: [tenant_slug, kind, database, healthy, problem, size_bytes, migrations]
+            properties:
+              tenant_slug:
+                type: string
+              kind:
+                type: string
+                enum: [production, sandbox, demo]
+              database:
+                description: Database lingkungan; null berarti database bersama runtime.
+                type: [string, 'null']
+              healthy:
+                type: boolean
+              problem:
+                description: Sebab tidak sehat, dalam bahasa yang dibaca operator.
+                type: [string, 'null']
+                maxLength: 500
+              size_bytes:
+                type: [integer, 'null']
+                minimum: 0
+              migrations:
+                description: Migration terakhir per pemilik, misalnya `{ "core": "0013_environment_route_disabled.sql" }`.
+                type: object
+                additionalProperties:
+                  type: string
     Step:
       type: object
       additionalProperties: false
