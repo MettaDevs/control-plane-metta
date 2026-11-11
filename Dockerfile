@@ -11,10 +11,12 @@ RUN bun scripts/build.ts
 
 # Satu image untuk semua proses. Konsol berjalan secara bawaan dan menyajikan layar dari dist/client; portal klien dengan
 # `bun dist/portal.js`, yang menyajikan layarnya sendiri dari dist/portal-client; agen dengan `bun dist/agent.js`;
-# perintah operasional dengan `bun dist/cli.js`.
+# perintah operasional dengan `bun dist/cli.js`; migration database pusat dengan `bun dist/migrate.js`, yang membaca
+# database/migrations di sebelah dist/.
 FROM oven/bun:1.4.4-slim
 WORKDIR /app
 COPY --from=build /app/dist ./dist
+COPY database/migrations ./database/migrations
 USER bun
 ENV HOST=0.0.0.0 PORT=8000
 EXPOSE 8000

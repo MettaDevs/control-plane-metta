@@ -19,7 +19,7 @@
         "format:check": "prettier --check src packages scripts test .github package.json tsconfig.json tsconfig.portal.json",
         "check:boundaries": "bun scripts/check-boundaries.ts",
         "check:generated": "bun scripts/generate-client.ts --check",
-        "migrate": "bun scripts/migrate.ts",
+        "migrate": "bun src/migrate.ts",
         "cli": "bun src/cli.ts"
     },
     "dependencies": {
