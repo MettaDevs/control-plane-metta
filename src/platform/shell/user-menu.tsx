@@ -5,9 +5,9 @@ import {
     DropdownMenuSeparator,
 } from '@control-plane-metta/ui/dropdown-menu';
 import { useQueryClient } from '@tanstack/react-query';
-import { LogOut } from 'lucide-react';
+import { Link2, Link2Off, LogOut } from 'lucide-react';
 import { toast } from 'sonner';
-import { api, errorText } from './api.ts';
+import { api, errorText, meQuery } from './api.ts';
 import type { Operator } from './api.ts';
 
 export function initials(fullName: string): string {
@@ -39,9 +39,28 @@ export function UserInfo({ operator }: { operator: Operator }) {
     );
 }
 
-// Isi menu profil di header. Layar 2FA dan tautan SSO belum ada; keduanya masih lewat API.
-export function UserMenuContent({ operator }: { operator: Operator }) {
+// Isi menu profil di header. Layar 2FA belum ada dan masih lewat API.
+export function UserMenuContent({
+    operator,
+    sso,
+    onLinkSso,
+}: {
+    operator: Operator;
+    sso: { linked: boolean } | null;
+    onLinkSso: () => void;
+}) {
     const queryClient = useQueryClient();
+
+    const unlink = async () => {
+        try {
+            await api.ssoUnlink();
+        } catch (caught) {
+            toast.error(errorText(caught, 'Tautan SSO belum dilepas.'));
+            return;
+        }
+        toast.success('Tautan SSO dilepas. Login berikutnya memakai password.');
+        await queryClient.invalidateQueries({ queryKey: meQuery.queryKey });
+    };
 
     const logout = async () => {
         try {
@@ -63,6 +82,24 @@ export function UserMenuContent({ operator }: { operator: Operator }) {
                 </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
+            {sso && !sso.linked && (
+                <DropdownMenuItem
+                    className="cursor-pointer"
+                    onSelect={onLinkSso}
+                >
+                    <Link2 className="mr-2" />
+                    Tautkan akun SSO
+                </DropdownMenuItem>
+            )}
+            {sso?.linked && (
+                <DropdownMenuItem
+                    className="cursor-pointer"
+                    onSelect={() => void unlink()}
+                >
+                    <Link2Off className="mr-2" />
+                    Lepas tautan SSO
+                </DropdownMenuItem>
+            )}
             <DropdownMenuItem
                 className="cursor-pointer"
                 onSelect={() => void logout()}

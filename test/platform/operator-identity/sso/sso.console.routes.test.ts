@@ -164,9 +164,10 @@ describe.skipIf(!process.env.DB_HOST)('operator SSO', () => {
         const ssoSession = value(cookieOf(viaSso, config.SESSION_COOKIE));
         const me = await call('/api/v1/me', { cookie: ssoSession });
         expect(me.status).toBe(200);
-        expect(
-            ((await me.json()) as { operator: { id: string } }).operator.id,
-        ).toBe(operator.id);
+        expect(await me.json()).toMatchObject({
+            operator: { id: operator.id },
+            sso: { linked: true },
+        });
 
         const logoutToken = await stub.sign({
             ...stub.idClaims({ sub: subject }),
