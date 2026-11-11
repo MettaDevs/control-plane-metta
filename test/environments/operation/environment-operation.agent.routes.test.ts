@@ -5,7 +5,6 @@ import { createCustomer } from '../../../src/customers/customer/customer.service
 import { addRuntimeHost } from '../../../src/environments/index.ts';
 import {
     requestConversion,
-    requestCopy,
     requestMigration,
     requestRestore,
 } from '../../../src/environments/operation/environment-operation.service.ts';
@@ -902,113 +901,5 @@ describe.skipIf(!process.env.DB_HOST)('worker environment queue', () => {
         await claimOwn();
         expect(await purges(environmentId)).toBe(2);
         expect(await purges(production.environment_id)).toBe(0);
-    });
-
-    test('copy melahirkan sandbox di host produksinya, gagal bisa disalin ulang ke sandbox yang sama, sukses mengaktifkannya', async () => {
-        const worker = await host();
-        const actor = { operatorId: await operator(), ipAddress: null };
-        const created = await customer(worker.id);
-        const sourceId = created.environment_id;
-        const own = new Set([sourceId]);
-        const operationSchema = z.object({
-            operation: z.object({
-                id: z.string(),
-                operation: z.string(),
-                environment_id: z.string(),
-                parameters: z.record(z.string(), z.unknown()),
-            }),
-        });
-        const claimOwn = async () => {
-            for (let attempt = 0; attempt < 20; attempt++) {
-                const response = await worker.call(
-                    '/api/worker/v1/operations/claim',
-                );
-                if (response.status !== 200) return null;
-                const { operation } = operationSchema.parse(
-                    await response.json(),
-                );
-                if (own.has(operation.environment_id)) return operation;
-            }
-            return null;
-        };
-        const close = (id: string, status: 'succeeded' | 'failed') =>
-            worker.call(`/api/worker/v1/operations/${id}/steps`, {
-                status,
-                step: status === 'succeeded' ? 'done' : 'failed',
-                ...(status === 'failed'
-                    ? { failure_message: 'pg_restore gagal' }
-                    : {}),
-            });
-        const refused = (promise: Promise<unknown>) =>
-            promise.then(
-                () => null,
-                (error: unknown) =>
-                    z
-                        .object({ body: z.object({ error: z.string() }) })
-                        .parse(error).body.error,
-            );
-        expect(await refused(requestCopy(db, actor, sourceId, 'Sandbox'))).toBe(
-            'environment_not_active',
-        );
-        await close((await claimOwn())!.id, 'succeeded');
-
-        const first = await requestCopy(db, actor, sourceId, 'Uji UAT');
-        own.add(first.environment_id);
-        const sandbox = async () => {
-            const [row] = await pool.unsafe(
-                `select kind, slug, name, status, source_environment_id, runtime_host_id, outbound_allowed,
-                    copied_at is not null as copied, schema_migrated_at is not null as migrated, database_name
-                 from environments where id = $1`,
-                [first.environment_id],
-            );
-            return { ...row };
-        };
-        expect(await sandbox()).toMatchObject({
-            kind: 'sandbox',
-            slug: 'sandbox',
-            name: 'Uji UAT',
-            status: 'copying',
-            source_environment_id: sourceId,
-            runtime_host_id: worker.id,
-            outbound_allowed: false,
-        });
-        expect(await refused(requestCopy(db, actor, sourceId, 'Lagi'))).toBe(
-            'sandbox_exists',
-        );
-        const claimed = await claimOwn();
-        const [source] = await pool.unsafe(
-            'select e.database_name, t.slug, t.id from environments e join tenants t on t.id = e.tenant_id where e.id = $1',
-            [sourceId],
-        );
-        expect(claimed).toMatchObject({
-            id: first.id,
-            operation: 'copy',
-            environment_id: first.environment_id,
-            parameters: {
-                tenant_id: source?.id,
-                tenant_slug: source?.slug,
-                name: 'Uji UAT',
-                source_database: source?.database_name,
-                database: (await sandbox()).database_name,
-            },
-        });
-        await close(first.id, 'failed');
-        expect(await sandbox()).toMatchObject({ status: 'degraded' });
-
-        const again = await requestCopy(db, actor, sourceId, 'Uji UAT');
-        expect(again.environment_id).toBe(first.environment_id);
-        expect((await claimOwn())?.id).toBe(again.id);
-        await close(again.id, 'succeeded');
-        expect(await sandbox()).toMatchObject({
-            status: 'active',
-            copied: true,
-            migrated: true,
-        });
-        expect(await refused(requestCopy(db, actor, sourceId, 'Lagi'))).toBe(
-            'sandbox_exists',
-        );
-        expect(
-            await refused(requestCopy(db, actor, first.environment_id, 'X')),
-        ).toBe('environment_not_copyable');
     });
 });

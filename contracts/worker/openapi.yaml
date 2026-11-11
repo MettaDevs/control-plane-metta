@@ -28,7 +28,7 @@ info:
     - Tenggat 30 menit, diperpanjang setiap langkah `running`. Tenggat yang lewat ditutup gagal saat antrean dibaca, dan
       lingkungannya menjadi `degraded`. Langkah dan penutupan dari worker yang tidak lagi memegang operasi dijawab
       `409 operation_not_held`; worker itu harus berhenti.
-    - Penutupan `succeeded` operasi `provision`, `migrate`, dan `copy` membuat lingkungan `active`; `failed` membuatnya
+    - Penutupan `succeeded` operasi `provision` dan `migrate` membuat lingkungan `active`; `failed` membuatnya
       `degraded`. Penutupan `convert` membiarkan lingkungan `active` apa pun hasilnya, termasuk bila tenggatnya habis,
       karena demo yang gagal dikonversi masih utuh dan sedang dipakai. Penutupan `succeeded` operasi `expire`
       menghapus lunak lingkungannya (isinya boleh dibuang setelah masa tenggang, bawaannya 30 hari); `failed` tidak
@@ -63,12 +63,6 @@ info:
     - `purge`: membuang database lingkungan secara permanen (`DROP DATABASE ... WITH (FORCE)`). Alamatnya tetap
       tercatat nonaktif sebagai nisan. Worker menolak membuang database yang masih ditunjuk alamat aktif. Database null
       (database bersama runtime) tidak pernah dibuang. Parameternya `PurgeParameters`.
-    - `copy`: menyalin database produksi `source_database` menjadi database sandbox `database` di Postgres host ini,
-      tanpa menghentikan produksi (pg_dump satu snapshot, pg_restore satu transaksi). Lalu melucuti efek keluar yang
-      ikut tersalin (antrean event, ekspor laporan, reservasi nomor, job, kredensial layanan, sesi, cache, registri
-      salinan), memigrasi, memeriksa bahwa tidak ada yang tersisa, dan terakhir mencatat alamat
-      `<tenant_slug>.sandbox.<base>`. Lingkungan sandbox sudah terikat ke host produksinya sejak diminta. Aman diulang:
-      database yang sudah terisi tidak disalin lagi. Parameternya `CopyParameters`.
 servers:
   - url: /api/worker/v1
 paths:
@@ -203,7 +197,7 @@ components:
           format: uuid
         operation:
           type: string
-          enum: [provision, migrate, convert, expire, restore, purge, copy]
+          enum: [provision, migrate, convert, expire, restore, purge]
         environment_id:
           type: string
           format: uuid
@@ -211,7 +205,7 @@ components:
           type: string
           format: date-time
         parameters:
-          description: '`ProvisionParameters` untuk `provision`, `MigrateParameters` untuk `migrate`, `ConvertParameters` untuk `convert`, `ExpireParameters` untuk `expire`, `RestoreParameters` untuk `restore`, `PurgeParameters` untuk `purge`, `CopyParameters` untuk `copy`.'
+          description: '`ProvisionParameters` untuk `provision`, `MigrateParameters` untuk `migrate`, `ConvertParameters` untuk `convert`, `ExpireParameters` untuk `expire`, `RestoreParameters` untuk `restore`, `PurgeParameters` untuk `purge`.'
           oneOf:
             - $ref: '#/components/schemas/ProvisionParameters'
             - $ref: '#/components/schemas/MigrateParameters'
@@ -219,7 +213,6 @@ components:
             - $ref: '#/components/schemas/ExpireParameters'
             - $ref: '#/components/schemas/RestoreParameters'
             - $ref: '#/components/schemas/PurgeParameters'
-            - $ref: '#/components/schemas/CopyParameters'
     ProvisionParameters:
       description: |
         Permintaan penyiapan operations-metta (`provisionRequestSchema` di `src/platform/environment/` repo itu),
@@ -324,29 +317,6 @@ components:
         database:
           description: Database lingkungan; null berarti database bersama runtime, yang tidak pernah dibuang.
           type: [string, 'null']
-          pattern: '^[a-z][a-z0-9_]{0,62}$'
-    CopyParameters:
-      type: object
-      additionalProperties: false
-      required: [tenant_id, tenant_slug, name, source_database, database]
-      properties:
-        tenant_id:
-          type: string
-          format: uuid
-        tenant_slug:
-          type: string
-        name:
-          description: Nama lingkungan sandbox.
-          type: string
-          minLength: 1
-          maxLength: 100
-        source_database:
-          description: Database produksi yang disalin; hanya dibaca.
-          type: string
-          pattern: '^[a-z][a-z0-9_]{0,62}$'
-        database:
-          description: Database sandbox yang diisi.
-          type: string
           pattern: '^[a-z][a-z0-9_]{0,62}$'
     Step:
       type: object
