@@ -16,10 +16,10 @@ const required = (message: string) => ({ error: message });
 
 export const customerInputSchema = z.object({
     legal_name: z
-        .string(required('Isi nama badan usaha.'))
+        .string(required('Isi nama tenant.'))
         .trim()
-        .min(1, 'Isi nama badan usaha.')
-        .max(255, 'Nama badan usaha paling panjang 255 karakter.'),
+        .min(1, 'Isi nama tenant.')
+        .max(255, 'Nama tenant paling panjang 255 karakter.'),
     // Menjadi alamat `<slug>.<base>`, jadi bentuknya label DNS, dan tidak pernah dipakai ulang.
     slug: z
         .string(required('Isi slug.'))
@@ -52,11 +52,15 @@ export const customerInputSchema = z.object({
                 kind: z.literal('production'),
                 name: z.string().trim().min(1).max(100).default('Produksi'),
             }),
-            // Lama trial tidak ditulis mati: operator menentukan kapan demo berakhir.
+            // Lama trial tidak ditulis mati: operator menentukan kapan demo berakhir, atau mengosongkannya untuk demo
+            // tanpa batas waktu.
             z.object({
                 kind: z.literal('demo'),
                 name: z.string().trim().min(1).max(100).default('Demo'),
-                expires_at: z.iso.date('Isi tanggal berakhir demo.'),
+                expires_at: z.iso
+                    .date('Isi tanggal dengan format yang benar.')
+                    .nullable()
+                    .default(null),
             }),
         ],
         required('Pilih lingkungan pertama: produksi atau demo.'),
