@@ -63,6 +63,7 @@ describe.skipIf(!process.env.DB_HOST)(
                 }),
             );
             const key = crypto.randomUUID();
+            const slug = `undang-${crypto.randomUUID().slice(-12)}`;
             const create = () =>
                 call('/api/v1/customers', {
                     method: 'POST',
@@ -70,7 +71,7 @@ describe.skipIf(!process.env.DB_HOST)(
                     headers: { 'idempotency-key': key },
                     body: {
                         legal_name: 'PT Klinik Undang',
-                        slug: `undang-${crypto.randomUUID().slice(-12)}`,
+                        slug,
                         admin: {
                             name: 'Kepala Klinik',
                             email: 'Kepala@Klinik.test',
@@ -106,6 +107,7 @@ describe.skipIf(!process.env.DB_HOST)(
             });
 
             const replay = await create();
+            expect(replay.status).toBe(201);
             expect(
                 z
                     .object({ portal_invitation: z.null() })
