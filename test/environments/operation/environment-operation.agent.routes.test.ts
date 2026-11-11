@@ -2,6 +2,11 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { z } from 'zod';
 import { agentRouter } from '../../../src/agent.ts';
 import { createCustomer } from '../../../src/customers/customer/customer.service.ts';
+import {
+    changeEntitlement,
+    grantEntitlement,
+    revokeEntitlement,
+} from '../../../src/customers/entitlement/entitlement.service.ts';
 import { addRuntimeHost } from '../../../src/environments/index.ts';
 import {
     requestConversion,
@@ -1092,5 +1097,189 @@ describe.skipIf(!process.env.DB_HOST)('worker environment queue', () => {
         for (const excluded of [paused.id, full.id, silent.id, dedicated.id])
             expect(await placedOn(automatic.environment_id)).not.toBe(excluded);
         expect(await reason(dedicated.id)).toBeNull();
+    });
+
+    test('module yang dilaporkan host masuk katalog, dan entitlement tenant diterapkan ke lingkungannya lewat sync', async () => {
+        const worker = await host();
+        const actor = { operatorId: await operator(), ipAddress: null };
+        const moduleId = `modul-${crypto.randomUUID().slice(-8)}`;
+        const report = await worker.call('/api/worker/v1/report', {
+            release: '0.4.0',
+            modules: [{ id: moduleId, name: 'Module Uji', description: null }],
+            environments: [],
+        });
+        expect(report.status).toBe(200);
+        const [catalog] = await pool.unsafe(
+            `select m.name, h.reported_modules from catalog_modules m, runtime_hosts h
+             where m.id = $1 and h.id = $2`,
+            [moduleId, worker.id],
+        );
+        expect({ ...catalog }).toEqual({
+            name: 'Module Uji',
+            reported_modules: [moduleId],
+        });
+
+        const created = await customer(worker.id);
+        const tenantId = z
+            .string()
+            .parse(
+                (
+                    await pool.unsafe(
+                        'select tenant_id from environments where id = $1',
+                        [created.environment_id],
+                    )
+                )[0]?.tenant_id,
+            );
+        const claim = async () => {
+            const response = await worker.call(
+                '/api/worker/v1/operations/claim',
+            );
+            return response.status === 200
+                ? z
+                      .object({
+                          operation: z.object({
+                              id: z.string(),
+                              operation: z.string(),
+                              environment_id: z.string(),
+                              parameters: z.record(z.string(), z.unknown()),
+                          }),
+                      })
+                      .parse(await response.json()).operation
+                : null;
+        };
+        const close = (id: string) =>
+            worker.call(`/api/worker/v1/operations/${id}/steps`, {
+                status: 'succeeded',
+                step: 'done',
+            });
+        const syncs = async () =>
+            (
+                await pool.unsafe(
+                    "select count(*)::int as count from environment_operations where environment_id = $1 and operation = 'sync_entitlements'",
+                    [created.environment_id],
+                )
+            )[0]?.count;
+
+        const { id: entitlementId } = await grantEntitlement(
+            db,
+            actor,
+            tenantId,
+            { module_id: moduleId, ends_on: null },
+        );
+        // Lingkungan yang belum selesai disiapkan belum menerima module.
+        const provision = await claim();
+        expect(provision?.operation).toBe('provision');
+        expect(await syncs()).toBe(0);
+        await close(provision!.id);
+
+        const sync = await claim();
+        expect(sync).toMatchObject({
+            operation: 'sync_entitlements',
+            environment_id: created.environment_id,
+            parameters: {
+                tenant_id: tenantId,
+                database: provision!.parameters.database,
+                modules: [{ module_id: moduleId, ends_on: null }],
+            },
+        });
+        await close(sync!.id);
+        await claim();
+        expect(await syncs()).toBe(1);
+
+        await changeEntitlement(db, actor, entitlementId, {
+            ends_on: '2099-12-31',
+        });
+        const changed = await claim();
+        expect(changed?.parameters.modules).toEqual([
+            { module_id: moduleId, ends_on: '2099-12-31' },
+        ]);
+        await close(changed!.id);
+
+        await revokeEntitlement(db, actor, entitlementId);
+        const revoked = await claim();
+        expect(revoked?.parameters.modules).toEqual([]);
+        await close(revoked!.id);
+        await claim();
+        expect(await syncs()).toBe(3);
+        const [audit] = await pool.unsafe(
+            `select array_agg(action order by occurred_at, action) as actions from operator_audit_events
+             where subject_id = $1 and action like 'tenant.module_%'`,
+            [tenantId],
+        );
+        expect(audit?.actions).toEqual([
+            'tenant.module_entitled',
+            'tenant.module_entitlement_changed',
+            'tenant.module_entitlement_revoked',
+        ]);
+    });
+
+    test('entitlement menolak module di luar katalog, hak ganda, dan tanggal berakhir yang sudah lewat', async () => {
+        const worker = await host();
+        const actor = { operatorId: await operator(), ipAddress: null };
+        const moduleId = `modul-${crypto.randomUUID().slice(-8)}`;
+        await worker.call('/api/worker/v1/report', {
+            release: '0.4.0',
+            modules: [
+                { id: moduleId, name: 'Module Uji', description: 'Uji.' },
+            ],
+            environments: [],
+        });
+        const created = await customer(worker.id);
+        const tenantId = z
+            .string()
+            .parse(
+                (
+                    await pool.unsafe(
+                        'select tenant_id from environments where id = $1',
+                        [created.environment_id],
+                    )
+                )[0]?.tenant_id,
+            );
+        const field = (promise: Promise<unknown>) =>
+            promise.then(
+                () => null,
+                (error: unknown) =>
+                    Object.keys(
+                        z
+                            .object({
+                                body: z.object({
+                                    errors: z.record(z.string(), z.unknown()),
+                                }),
+                            })
+                            .parse(error).body.errors,
+                    ),
+            );
+        expect(
+            await field(
+                grantEntitlement(db, actor, tenantId, {
+                    module_id: 'tidak-ada',
+                    ends_on: null,
+                }),
+            ),
+        ).toEqual(['module_id']);
+        expect(
+            await field(
+                grantEntitlement(db, actor, tenantId, {
+                    module_id: moduleId,
+                    ends_on: '2000-01-01',
+                }),
+            ),
+        ).toEqual(['ends_on']);
+        expect(
+            await field(
+                grantEntitlement(db, actor, tenantId, {
+                    module_id: moduleId,
+                    ends_on: null,
+                }),
+            ),
+        ).toBeNull();
+        expect(
+            await field(
+                grantEntitlement(db, actor, tenantId, {
+                    module_id: moduleId,
+                    ends_on: null,
+                }),
+            ),
+        ).toEqual(['module_id']);
     });
 });

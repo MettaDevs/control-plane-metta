@@ -61,6 +61,8 @@ export function operationName(operation: Operation['operation']): string {
             return 'Pemulihan';
         case 'purge':
             return 'Pembuangan';
+        case 'sync_entitlements':
+            return 'Penerapan module';
         default: {
             const unknown: never = operation;
             return unknown;
