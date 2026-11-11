@@ -713,7 +713,7 @@ export async function requestCopy(
             throw new HttpFailure(409, {
                 error: 'sandbox_exists',
                 message:
-                    'Tenant ini sudah punya sandbox. Hapus sandbox itu dulu bila ingin salinan baru.',
+                    'Tenant ini sudah punya sandbox. Satu tenant hanya punya satu sandbox, dan sandbox yang sudah aktif tidak ditimpa salinan baru.',
             });
         const sandboxId = existing?.id ?? Bun.randomUUIDv7();
         const database =
