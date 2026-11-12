@@ -51,11 +51,6 @@ function AccordionContent({
     ...props
 }: React.ComponentProps<typeof AccordionPrimitive.Content>) {
     return (
-        /*
-         * `fill-mode-forwards` menahan tinggi 0 setelah animasi tutup selesai. Tanpa itu konten kembali ke
-         * tinggi penuh sampai Radix sempat memasang `hidden`; Radix menahan `forwards` hanya sampai
-         * `setTimeout(0)`, dan bila timer itu lebih dulu dari render React, satu frame tampil penuh: berkedip.
-         */
         <AccordionPrimitive.Content
             data-slot="accordion-content"
             className="overflow-hidden text-sm data-[state=closed]:animate-accordion-up data-[state=closed]:fill-mode-forwards data-[state=open]:animate-accordion-down"
