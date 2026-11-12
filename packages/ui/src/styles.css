@@ -587,15 +587,12 @@
     padding-block: 0.5rem;
     vertical-align: bottom;
 }
-/* Sorotan hanya selama pointer/fokus keyboard berada di header. Kolom terurut ditandai panahnya,
-   bukan latar: latar permanen membuat satu kolom tampak seperti blok terpisah dan tetap menyala
-   setelah diklik karena tombol urut masih memegang fokus. */
 [data-seamless-header]
     > [data-slot='table-container']
     > table
     > thead
     > tr
-    > th[data-column-id]:is(:hover, :has(:focus-visible)) {
+    > th:is(:hover, :focus-within, [aria-sort]) {
     background-color: color-mix(
         in oklab,
         var(--primary) 10%,
