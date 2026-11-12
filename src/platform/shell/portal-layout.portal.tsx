@@ -16,10 +16,12 @@ import { toast } from 'sonner';
 import { errorText } from './api-client.ts';
 import { api, meQuery } from './api.portal.ts';
 import { initials } from './initials.ts';
+import { TenantSwitcher } from './tenant-switcher.portal.tsx';
 import { useAppearance } from './use-appearance.ts';
 import { useDocumentTitle } from './use-document-title.ts';
 
-// Bingkai portal: satu header dan isi halaman. Portal baru punya satu halaman, jadi belum ada menu samping.
+// Bingkai portal: satu header dan isi halaman. Portal baru punya dua halaman, jadi menunya ada di header, bukan di
+// samping. Klinik aktif tampil di kanan atas, seperti penunjuk organisasi di pusat admin Microsoft 365.
 export function PortalLayout(): ReactNode {
     const { data: me } = useSuspenseQuery(meQuery);
     const queryClient = useQueryClient();
@@ -52,7 +54,16 @@ export function PortalLayout(): ReactNode {
                             <House />
                         </Link>
                     </Button>
+                    <nav className="flex items-center gap-1">
+                        <Button variant="ghost" size="sm" asChild>
+                            <Link to="/">Lingkungan</Link>
+                        </Button>
+                        <Button variant="ghost" size="sm" asChild>
+                            <Link to="/members">Anggota</Link>
+                        </Button>
+                    </nav>
                     <div className="ml-auto flex items-center gap-1">
+                        <TenantSwitcher me={me} />
                         <Button
                             variant="ghost"
                             size="icon"

@@ -98,7 +98,16 @@ describe.skipIf(!process.env.DB_HOST)('akses portal klien', () => {
             admin: { name: 'Admin', email: 'admin@portal.test' },
             environment: { kind: 'production', name: 'Produksi' },
         });
-        return { actor, clientId: created.client_id };
+        return {
+            actor,
+            clientId: created.client_id,
+            tenantId: created.tenant_id,
+            member: {
+                clientId: created.client_id,
+                tenantId: created.tenant_id,
+                kind: 'member' as const,
+            },
+        };
     }
     const stored = async (id: string) =>
         z
@@ -115,9 +124,9 @@ describe.skipIf(!process.env.DB_HOST)('akses portal klien', () => {
         z.string().parse(new URL(acceptUrl).searchParams.get('token'));
 
     test('undangan dikirim lewat penyedia SSO, hanya hash token yang disimpan, dan kirim ulang mengganti tautannya', async () => {
-        const { actor, clientId } = await setup();
+        const { actor, clientId, member } = await setup();
         stub.answer(200, { message: 'ok' });
-        const sent = await inviteToPortal(db, config, actor, clientId, {
+        const sent = await inviteToPortal(db, config, actor, member, {
             recipient_email: 'kepala@klinik.test',
             recipient_name: 'Kepala Klinik',
         });
@@ -133,6 +142,7 @@ describe.skipIf(!process.env.DB_HOST)('akses portal klien', () => {
             recipient_name: 'Kepala Klinik',
             accept_url: sent.accept_url,
             invited_by: 'Operator Portal',
+            role_name: 'Anggota klinik',
             expires_in_days: 7,
         });
         const first = await stored(sent.id);
@@ -162,6 +172,9 @@ describe.skipIf(!process.env.DB_HOST)('akses portal klien', () => {
                 kind: 'invitation',
                 id: sent.id,
                 email: 'kepala@klinik.test',
+                tenant_id: member.tenantId,
+                tenant_name: 'PT Klinik Portal',
+                admin: false,
                 notified: false,
                 expired: false,
             }),
@@ -174,9 +187,9 @@ describe.skipIf(!process.env.DB_HOST)('akses portal klien', () => {
     });
 
     test('akses yang sudah tertaut bisa dicabut, dan undangan ditolak bila portal tidak disetel', async () => {
-        const { actor, clientId } = await setup();
+        const { actor, clientId, member } = await setup();
         stub.answer(200, { message: 'ok' });
-        const sent = await inviteToPortal(db, config, actor, clientId, {
+        const sent = await inviteToPortal(db, config, actor, member, {
             recipient_email: 'staf@klinik.test',
             recipient_name: null,
         });
@@ -186,9 +199,10 @@ describe.skipIf(!process.env.DB_HOST)('akses portal klien', () => {
             [sent.id],
         );
         await db.execute(
-            `insert into client_portal_users (id, client_id, issuer, subject, email_at_link, invitation_id, created_at, updated_at)
-             values ($1, $2, 'https://sso.example.test', $3, 'staf@klinik.test', $4, now(), now())`,
-            [userId, clientId, crypto.randomUUID(), sent.id],
+            `insert into client_portal_users (id, client_id, tenant_id, issuer, subject, email_at_link, invitation_id,
+                created_at, updated_at)
+             values ($1, $2, $3, 'https://sso.example.test', $4, 'staf@klinik.test', $5, now(), now())`,
+            [userId, clientId, member.tenantId, crypto.randomUUID(), sent.id],
         );
         expect(await listPortalAccess(db, clientId)).toEqual([
             expect.objectContaining({ kind: 'user', id: userId }),
@@ -211,7 +225,7 @@ describe.skipIf(!process.env.DB_HOST)('akses portal klien', () => {
             APP_KEY: 'base64:' + Buffer.alloc(32, 31).toString('base64'),
         });
         await expect(
-            inviteToPortal(db, withoutPortal, actor, clientId, {
+            inviteToPortal(db, withoutPortal, actor, member, {
                 recipient_email: 'lain@klinik.test',
                 recipient_name: null,
             }),

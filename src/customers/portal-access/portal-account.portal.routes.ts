@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { HttpFailure, jsonBase } from '../../platform/http/index.ts';
 import {
+    canAccessTenant,
     findInvitation,
     portalAccount,
     revokePortalSessions,
@@ -32,9 +33,34 @@ export function portalAccountRoutes(session: PortalSession) {
             }),
         me: clientProcedure
             .route({ method: 'GET', path: '/api/v1/me' })
-            .handler(({ context }) =>
-                portalAccount(context.db, context.identity),
-            ),
+            .handler(async ({ context }) => ({
+                ...(await portalAccount(context.db, context.identity)),
+                active_tenant_id: context.tenant.tenant_id,
+            })),
+        // Mengganti tenant aktif. Tenant yang tidak bisa dibuka identitas ini dijawab 404, sama dengan tenant yang
+        // tidak ada.
+        chooseTenant: clientProcedure
+            .route({
+                method: 'PUT',
+                path: '/api/v1/active-tenant',
+                inputStructure: 'detailed',
+                successStatus: 204,
+            })
+            .input(z.object({ body: z.object({ tenant_id: z.uuid() }) }))
+            .handler(async ({ context, input }) => {
+                if (
+                    !(await canAccessTenant(
+                        context.db,
+                        context.identity,
+                        input.body.tenant_id,
+                    ))
+                )
+                    throw new HttpFailure(404, {
+                        error: 'tenant_not_found',
+                        message: 'Klinik ini tidak bisa Anda buka.',
+                    });
+                session.chooseTenant(context, input.body.tenant_id);
+            }),
         // Logout mengakhiri semua sesi portal identitas ini, termasuk di perangkat lain, sama dengan konsol.
         logout: clientProcedure
             .route({ method: 'POST', path: '/logout', successStatus: 204 })

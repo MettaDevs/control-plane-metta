@@ -10,7 +10,62 @@ import {
     sendInvitationEmail,
 } from '../../platform/oidc/index.ts';
 
-type Actor = { operatorId: string; ipAddress: string | null };
+// Pengundang: operator di konsol, atau admin portal tenant itu. Jejak audit tindakan dari portal ditulis tanpa
+// operator, dengan pengguna portalnya di detail.
+export type PortalUserActor = {
+    id: string;
+    tenantId: string;
+    name: string | null;
+    email: string | null;
+};
+export type Inviter =
+    | { operatorId: string; ipAddress: string | null }
+    | { portalUser: PortalUserActor; ipAddress: string | null };
+
+// admin: dikirim otomatis saat customer dibuat; penerimanya ditautkan ke admin pertama klinik. member: pengguna klinik
+// baru tanpa role, yang role-nya diberi admin klinik di dalam klinik.
+export type InvitationKind = 'admin' | 'member';
+
+function auditActor(inviter: Inviter) {
+    return 'operatorId' in inviter
+        ? { operatorId: inviter.operatorId, ipAddress: inviter.ipAddress }
+        : { operatorId: null, ipAddress: inviter.ipAddress };
+}
+
+function auditDetail(inviter: Inviter): Record<string, unknown> {
+    return 'portalUser' in inviter
+        ? {
+              portal_user_id: inviter.portalUser.id,
+              portal_user_name: inviter.portalUser.name,
+              portal_user_email: inviter.portalUser.email,
+          }
+        : {};
+}
+
+// Undangan dari portal hanya menyentuh tenant pengundangnya; operator boleh menyentuh undangan tenant mana pun.
+function tenantScope(inviter: Inviter): string | null {
+    return 'portalUser' in inviter ? inviter.portalUser.tenantId : null;
+}
+
+async function inviterName(db: Database, inviter: Inviter): Promise<string> {
+    if ('portalUser' in inviter)
+        return (
+            inviter.portalUser.name ??
+            inviter.portalUser.email ??
+            'Admin klinik'
+        );
+    const operator = await db.one(
+        z.object({ name: z.string() }),
+        'select name from operators where id = $1',
+        [inviter.operatorId],
+    );
+    return operator?.name ?? 'Operator';
+}
+
+const roleNames = {
+    admin: 'Admin klinik',
+    member: 'Anggota klinik',
+} as const satisfies Record<InvitationKind, string>;
 
 const now = "now() at time zone 'utc'";
 const iso = (column: string) =>
@@ -34,37 +89,43 @@ export type InvitationSent = {
     email_failure: string | null;
 };
 
+const invitationRowSchema = z.object({
+    recipient_email: z.string(),
+    recipient_name: z.string().nullable(),
+    kind: z.enum(['admin', 'member']),
+    expires_at: z.string(),
+});
+type InvitationRow = z.infer<typeof invitationRowSchema>;
+
+const notFound = () =>
+    new HttpFailure(404, {
+        error: 'invitation_not_found',
+        message:
+            'Undangan tidak ditemukan, sudah dipakai, atau sudah dibatalkan.',
+    });
+
 // Token baru setiap kali dikirim: yang tersimpan hanya hash-nya, jadi kirim ulang berarti tautan lama tidak berlaku
 // lagi.
 async function issueAndSend(
     db: Database,
     config: Config,
+    inviter: Inviter,
     invitationId: string,
-    rotate: (tokenHash: string) => Promise<{
-        recipient_email: string;
-        recipient_name: string | null;
-        expires_at: string;
-        invited_by: string;
-    } | null>,
+    rotate: (tokenHash: string) => Promise<InvitationRow | null>,
 ): Promise<InvitationSent> {
     const portal = portalOf(config);
     const { token, hash } = newInvitationToken();
     const invitation = await rotate(hash);
-    if (!invitation)
-        throw new HttpFailure(404, {
-            error: 'invitation_not_found',
-            message:
-                'Undangan tidak ditemukan, sudah dipakai, atau sudah dibatalkan.',
-        });
+    if (!invitation) throw notFound();
     const acceptUrl = `${portal.url}/invitation?token=${token}`;
     const failure = await sendInvitationEmail(portal.sso, 'PORTAL_SSO', {
         recipientEmail: invitation.recipient_email,
         recipientName: invitation.recipient_name,
         acceptUrl,
         expiresInDays: invitationDays,
-        invitedBy: invitation.invited_by,
+        invitedBy: await inviterName(db, inviter),
         appName: 'Portal klien',
-        roleName: 'Admin klinik',
+        roleName: roleNames[invitation.kind],
     });
     if (failure === null)
         await db.execute(
@@ -87,63 +148,59 @@ async function issueAndSend(
     };
 }
 
-const invitationRowSchema = z.object({
-    recipient_email: z.string(),
-    recipient_name: z.string().nullable(),
-    expires_at: z.string(),
-    invited_by: z.string(),
-});
-
+// Undangan ke satu tenant milik customer clientId. Tenant yang bukan milik customer itu dijawab 404.
 export async function inviteToPortal(
     db: Database,
     config: Config,
-    actor: Actor,
-    clientId: string,
+    inviter: Inviter,
+    target: { clientId: string; tenantId: string; kind: InvitationKind },
     input: InvitationInput,
 ): Promise<InvitationSent> {
     portalOf(config);
     const id = Bun.randomUUIDv7();
-    return issueAndSend(db, config, id, (tokenHash) =>
+    return issueAndSend(db, config, inviter, id, (tokenHash) =>
         db.transaction(async () => {
-            const client = await db.one(
+            const tenant = await db.one(
                 z.object({ id: z.string() }),
-                'select id from clients where id = $1',
-                [clientId],
+                'select id from tenants where id = $1 and client_id = $2',
+                [target.tenantId, target.clientId],
             );
-            if (!client)
+            if (!tenant)
                 throw new HttpFailure(404, {
-                    error: 'customer_not_found',
-                    message: 'Customer tidak ditemukan.',
+                    error: 'tenant_not_found',
+                    message: 'Klinik ini tidak ditemukan pada customer ini.',
                 });
             const row = await db.one(
                 invitationRowSchema,
-                `with created as (
-                    insert into client_portal_invitations
-                        (id, client_id, token_hash, recipient_email, recipient_name, expires_at, created_by,
-                         created_at, updated_at)
-                    values ($1, $2, $3, $4, $5, ${now} + make_interval(days => $6), $7, ${now}, ${now})
-                    returning recipient_email, recipient_name, expires_at, created_by
-                 )
-                 select c.recipient_email, c.recipient_name, ${iso('c.expires_at')} as expires_at, o.name as invited_by
-                 from created c join operators o on o.id = c.created_by`,
+                `insert into client_portal_invitations
+                    (id, client_id, tenant_id, kind, token_hash, recipient_email, recipient_name, expires_at,
+                     created_by, invited_by_portal_user_id, created_at, updated_at)
+                 values ($1, $2, $3, $4, $5, $6, $7, ${now} + make_interval(days => $8), $9, $10, ${now}, ${now})
+                 returning recipient_email, recipient_name, kind, ${iso('expires_at')} as expires_at`,
                 [
                     id,
-                    clientId,
+                    target.clientId,
+                    target.tenantId,
+                    target.kind,
                     tokenHash,
                     input.recipient_email,
                     input.recipient_name,
                     invitationDays,
-                    actor.operatorId,
+                    'operatorId' in inviter ? inviter.operatorId : null,
+                    'portalUser' in inviter ? inviter.portalUser.id : null,
                 ],
             );
             await recordAudit(db, {
-                ...actor,
+                ...auditActor(inviter),
                 action: 'customer.portal_invited',
                 subjectType: 'client',
-                subjectId: clientId,
+                subjectId: target.clientId,
                 detail: {
                     invitation_id: id,
+                    tenant_id: target.tenantId,
+                    kind: target.kind,
                     recipient_email: input.recipient_email,
+                    ...auditDetail(inviter),
                 },
             });
             return row ?? null;
@@ -154,34 +211,36 @@ export async function inviteToPortal(
 export async function resendPortalInvitation(
     db: Database,
     config: Config,
-    actor: Actor,
+    inviter: Inviter,
     invitationId: string,
 ): Promise<InvitationSent> {
-    return issueAndSend(db, config, invitationId, (tokenHash) =>
+    return issueAndSend(db, config, inviter, invitationId, (tokenHash) =>
         db.transaction(async () => {
             const row = await db.one(
-                invitationRowSchema.extend({ client_id: z.string() }),
-                `with rotated as (
-                    update client_portal_invitations
-                    set token_hash = $2, expires_at = ${now} + make_interval(days => $3), notified_at = null,
-                        updated_at = ${now}
-                    where id = $1 and accepted_at is null and deleted_at is null
-                    returning client_id, recipient_email, recipient_name, expires_at
-                 )
-                 select r.client_id, r.recipient_email, r.recipient_name, ${iso('r.expires_at')} as expires_at,
-                    o.name as invited_by
-                 from rotated r join operators o on o.id = $4`,
-                [invitationId, tokenHash, invitationDays, actor.operatorId],
+                invitationRowSchema.extend({
+                    client_id: z.string(),
+                    tenant_id: z.string(),
+                }),
+                `update client_portal_invitations
+                 set token_hash = $2, expires_at = ${now} + make_interval(days => $3), notified_at = null,
+                    updated_at = ${now}
+                 where id = $1 and accepted_at is null and deleted_at is null
+                   and ($4::uuid is null or tenant_id = $4::uuid)
+                 returning client_id, tenant_id, recipient_email, recipient_name, kind,
+                    ${iso('expires_at')} as expires_at`,
+                [invitationId, tokenHash, invitationDays, tenantScope(inviter)],
             );
             if (!row) return null;
             await recordAudit(db, {
-                ...actor,
+                ...auditActor(inviter),
                 action: 'customer.portal_invitation_resent',
                 subjectType: 'client',
                 subjectId: row.client_id,
                 detail: {
                     invitation_id: invitationId,
+                    tenant_id: row.tenant_id,
                     recipient_email: row.recipient_email,
+                    ...auditDetail(inviter),
                 },
             });
             return row;
@@ -191,50 +250,55 @@ export async function resendPortalInvitation(
 
 export async function cancelPortalInvitation(
     db: Database,
-    actor: Actor,
+    inviter: Inviter,
     invitationId: string,
 ): Promise<void> {
     await db.transaction(async () => {
         const row = await db.one(
-            z.object({ client_id: z.string(), recipient_email: z.string() }),
+            z.object({
+                client_id: z.string(),
+                tenant_id: z.string(),
+                recipient_email: z.string(),
+            }),
             `update client_portal_invitations set deleted_at = ${now}, updated_at = ${now}
              where id = $1 and accepted_at is null and deleted_at is null
-             returning client_id, recipient_email`,
-            [invitationId],
+               and ($2::uuid is null or tenant_id = $2::uuid)
+             returning client_id, tenant_id, recipient_email`,
+            [invitationId, tenantScope(inviter)],
         );
-        if (!row)
-            throw new HttpFailure(404, {
-                error: 'invitation_not_found',
-                message:
-                    'Undangan tidak ditemukan, sudah dipakai, atau sudah dibatalkan.',
-            });
+        if (!row) throw notFound();
         await recordAudit(db, {
-            ...actor,
+            ...auditActor(inviter),
             action: 'customer.portal_invitation_cancelled',
             subjectType: 'client',
             subjectId: row.client_id,
             detail: {
                 invitation_id: invitationId,
+                tenant_id: row.tenant_id,
                 recipient_email: row.recipient_email,
+                ...auditDetail(inviter),
             },
         });
     });
 }
 
+// Mencabut akses portal tidak menyentuh akun SSO yang sudah ditautkan ke pengguna klinik (tenant_identities): akses ke
+// klinik diatur di dalam klinik sendiri.
 export async function revokePortalUser(
     db: Database,
-    actor: Actor,
+    actor: { operatorId: string; ipAddress: string | null },
     userId: string,
 ): Promise<void> {
     await db.transaction(async () => {
         const row = await db.one(
             z.object({
                 client_id: z.string(),
+                tenant_id: z.string(),
                 email_at_link: z.string().nullable(),
             }),
             `update client_portal_users set deleted_at = ${now}, updated_at = ${now}
              where id = $1 and deleted_at is null
-             returning client_id, email_at_link`,
+             returning client_id, tenant_id, email_at_link`,
             [userId],
         );
         if (!row)
@@ -249,35 +313,56 @@ export async function revokePortalUser(
             subjectId: row.client_id,
             detail: {
                 portal_user_id: userId,
+                tenant_id: row.tenant_id,
                 email_at_link: row.email_at_link,
             },
         });
     });
 }
 
-// Siapa yang punya akses portal customer ini, dan undangan yang masih menunggu, dalam satu daftar. Undangan yang
-// kedaluwarsa ikut tampil supaya operator bisa mengirim ulang.
-export async function listPortalAccess(db: Database, clientId: string) {
+const accessRowSchema = z.object({
+    kind: z.enum(['user', 'invitation']),
+    id: z.string(),
+    name: z.string().nullable(),
+    email: z.string().nullable(),
+    tenant_id: z.string(),
+    tenant_name: z.string(),
+    // Pemegang akses admin atau penerima undangan admin: boleh mengundang anggota ke tenant itu.
+    admin: z.boolean(),
+    since: z.string(),
+    expires_at: z.string().nullable(),
+    notified: z.boolean(),
+    expired: z.boolean(),
+});
+
+// Siapa yang punya akses portal, dan undangan yang masih menunggu, dalam satu daftar, untuk satu customer atau satu
+// tenant. Undangan yang kedaluwarsa ikut tampil supaya bisa dikirim ulang.
+function listAccess(
+    db: Database,
+    column: 'client_id' | 'tenant_id',
+    id: string,
+) {
     return db.rows(
-        z.object({
-            kind: z.enum(['user', 'invitation']),
-            id: z.string(),
-            name: z.string().nullable(),
-            email: z.string().nullable(),
-            since: z.string(),
-            expires_at: z.string().nullable(),
-            notified: z.boolean(),
-            expired: z.boolean(),
-        }),
-        `select 'user' as kind, u.id, u.name_at_link as name, u.email_at_link as email, ${iso('u.created_at')} as since,
-            null as expires_at, true as notified, false as expired
-         from client_portal_users u where u.client_id = $1 and u.deleted_at is null
+        accessRowSchema,
+        `select 'user' as kind, u.id, u.name_at_link as name, u.email_at_link as email, u.tenant_id,
+            t.name as tenant_name, u.is_admin as admin, ${iso('u.created_at')} as since, null as expires_at,
+            true as notified, false as expired
+         from client_portal_users u join tenants t on t.id = u.tenant_id
+         where u.${column} = $1 and u.deleted_at is null
          union all
-         select 'invitation', i.id, i.recipient_name, i.recipient_email, ${iso('i.created_at')}, ${iso('i.expires_at')},
-            i.notified_at is not null, i.expires_at <= ${now}
-         from client_portal_invitations i
-         where i.client_id = $1 and i.accepted_at is null and i.deleted_at is null
+         select 'invitation', i.id, i.recipient_name, i.recipient_email, i.tenant_id, t.name, i.kind = 'admin',
+            ${iso('i.created_at')}, ${iso('i.expires_at')}, i.notified_at is not null, i.expires_at <= ${now}
+         from client_portal_invitations i join tenants t on t.id = i.tenant_id
+         where i.${column} = $1 and i.accepted_at is null and i.deleted_at is null
          order by kind desc, since`,
-        [clientId],
+        [id],
     );
+}
+
+export function listPortalAccess(db: Database, clientId: string) {
+    return listAccess(db, 'client_id', clientId);
+}
+
+export function listTenantMembers(db: Database, tenantId: string) {
+    return listAccess(db, 'tenant_id', tenantId);
 }

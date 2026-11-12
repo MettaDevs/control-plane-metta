@@ -18,6 +18,7 @@ export const environmentOperations = [
     'restore',
     'purge',
     'sync_entitlements',
+    'sync_identities',
 ] as const;
 export type EnvironmentOperation = (typeof environmentOperations)[number];
 
@@ -59,6 +60,7 @@ async function expireStale(db: Database): Promise<void> {
 //   environments_produksi_tidak_dibuang menolaknya sekali lagi.
 // - sync_entitlements: lingkungan aktif yang entitlement tenant-nya berbeda dari yang terakhir diterapkan di sana, termasuk
 //   lingkungan yang baru selesai disiapkan.
+// - sync_identities: sama, untuk akun SSO yang ditautkan ke pengguna klinik (tenant_identities).
 // Lingkungan yang masih punya operasi terbuka dilewati, dan operasi yang baru saja gagal tidak diantrekan ulang selama
 // sejam supaya worker tidak mengulang kegagalan yang sama setiap kali meminta. Yang sukses tidak menahan apa pun, karena
 // syarat jatuh temponya sudah tidak terpenuhi lagi.
@@ -68,12 +70,20 @@ const scheduledRetryMinutes = 60;
 export const desiredEntitlements = `(select coalesce(jsonb_agg(jsonb_build_object('module_id', m.module_id,
         'ends_on', to_char(m.ends_on, 'YYYY-MM-DD')) order by m.module_id), '[]'::jsonb)
     from tenant_module_entitlements m where m.tenant_id = e.tenant_id and m.deleted_at is null)`;
+// Akun SSO hidup tenant lingkungan e, urut waktu ditautkan, dalam bentuk yang dikirim ke worker dan disimpan sebagai
+// applied_identities sesudah berhasil diterapkan. Ekspresi SQL atas lingkungan beralias e.
+export const desiredIdentities = `(select coalesce(jsonb_agg(jsonb_build_object('issuer', i.issuer,
+        'subject', i.subject, 'email', i.email, 'name', i.name, 'user_id', i.user_id) order by i.created_at, i.id),
+        '[]'::jsonb)
+    from tenant_identities i where i.tenant_id = e.tenant_id and i.deleted_at is null)`;
 const scheduledOperations = {
     expire: `e.kind = 'demo' and e.deleted_at is null and e.expires_at <= ${now}`,
     purge: `e.kind <> 'production' and e.status = 'soft_deleted' and e.deleted_at is not null
         and e.purged_at is null and e.purge_after <= ${now}`,
     sync_entitlements: `e.status = 'active' and e.deleted_at is null
         and coalesce(e.applied_entitlements, '[]'::jsonb) <> ${desiredEntitlements}`,
+    sync_identities: `e.status = 'active' and e.deleted_at is null
+        and coalesce(e.applied_identities, '[]'::jsonb) <> ${desiredIdentities}`,
 } as const satisfies Partial<Record<EnvironmentOperation, string>>;
 
 function scheduledParameters(
@@ -84,6 +94,7 @@ function scheduledParameters(
         kind: string;
         database_name: string | null;
         entitlements: unknown;
+        identities: unknown;
     },
 ): Record<string, unknown> {
     switch (operation) {
@@ -103,6 +114,12 @@ function scheduledParameters(
                 tenant_id: environment.tenant_id,
                 database: environment.database_name,
                 modules: environment.entitlements,
+            };
+        case 'sync_identities':
+            return {
+                tenant_id: environment.tenant_id,
+                database: environment.database_name,
+                identities: environment.identities,
             };
         default: {
             const unknown: never = operation;
@@ -126,9 +143,10 @@ async function enqueueScheduled(db: Database, hostId: string): Promise<void> {
                 kind: z.string(),
                 database_name: z.string().nullable(),
                 entitlements: z.unknown(),
+                identities: z.unknown(),
             }),
             `select e.id, e.tenant_id, t.slug as tenant_slug, e.kind, e.database_name,
-                ${desiredEntitlements} as entitlements
+                ${desiredEntitlements} as entitlements, ${desiredIdentities} as identities
              from environments e join tenants t on t.id = e.tenant_id
              where e.runtime_host_id = $1 and e.hosting = 'provider' and ${due}
                and not exists (select 1 from environment_operations x where x.environment_id = e.id
@@ -201,6 +219,7 @@ const environmentAfter = {
     restore: { succeeded: null, failed: null, migrates: false },
     purge: { succeeded: null, failed: null, migrates: false },
     sync_entitlements: { succeeded: null, failed: null, migrates: false },
+    sync_identities: { succeeded: null, failed: null, migrates: false },
 } as const satisfies Record<
     EnvironmentOperation,
     { succeeded: string | null; failed: string | null; migrates: boolean }
@@ -377,6 +396,12 @@ export async function recordStep(
         if (held.operation === 'sync_entitlements' && status === 'succeeded')
             await db.execute(
                 `update environments e set applied_entitlements = o.parameters -> 'modules', updated_at = ${now}
+                 from environment_operations o where o.id = $1 and e.id = o.environment_id`,
+                [operationId],
+            );
+        if (held.operation === 'sync_identities' && status === 'succeeded')
+            await db.execute(
+                `update environments e set applied_identities = o.parameters -> 'identities', updated_at = ${now}
                  from environment_operations o where o.id = $1 and e.id = o.environment_id`,
                 [operationId],
             );

@@ -3,6 +3,7 @@
 import {
     portalAccountRoutes,
     portalEnvironmentRoutes,
+    portalMemberRoutes,
     portalSession,
     portalSsoRoutes,
 } from './customers/index.portal.ts';
@@ -20,6 +21,7 @@ export function portalRouter(config: Config, portal: PortalSettings) {
         ...portalSsoRoutes(config, portal, session),
         ...portalAccountRoutes(session),
         ...portalEnvironmentRoutes(config, session),
+        ...portalMemberRoutes(config, session),
     };
 }
 

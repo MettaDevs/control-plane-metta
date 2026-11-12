@@ -7,6 +7,7 @@ import {
     grantEntitlement,
     revokeEntitlement,
 } from '../../../src/customers/entitlement/entitlement.service.ts';
+import { acceptInvitation } from '../../../src/customers/portal-access/portal-identity.service.ts';
 import { addRuntimeHost } from '../../../src/environments/index.ts';
 import {
     requestConversion,
@@ -16,6 +17,7 @@ import {
 import { loadConfig } from '../../../src/platform/config/index.ts';
 import { createPool, Database } from '../../../src/platform/database/index.ts';
 import { createApplication } from '../../../src/platform/http/index.ts';
+import { hashInvitationToken } from '../../../src/platform/oidc/index.ts';
 import { createOperator } from '../../../src/platform/operator-identity/index.ts';
 import { signedRequest, siteKeyPair } from '../../support/agent-client.ts';
 
@@ -1211,6 +1213,129 @@ describe.skipIf(!process.env.DB_HOST)('worker environment queue', () => {
             'tenant.module_entitlement_changed',
             'tenant.module_entitlement_revoked',
         ]);
+    });
+
+    test('akun SSO yang menerima undangan ditautkan ke pengguna klinik lewat sync_identities', async () => {
+        const worker = await host();
+        const created = await customer(worker.id);
+        const claim = async () => {
+            const response = await worker.call(
+                '/api/worker/v1/operations/claim',
+            );
+            return response.status === 200
+                ? z
+                      .object({
+                          operation: z.object({
+                              id: z.string(),
+                              operation: z.string(),
+                              environment_id: z.string(),
+                              parameters: z.record(z.string(), z.unknown()),
+                          }),
+                      })
+                      .parse(await response.json()).operation
+                : null;
+        };
+        const close = (id: string) =>
+            worker.call(`/api/worker/v1/operations/${id}/steps`, {
+                status: 'succeeded',
+                step: 'done',
+            });
+        // Undangan langsung di database, lalu diterima seperti callback SSO portal menerimanya.
+        const acceptAs = async (kind: 'admin' | 'member', subject: string) => {
+            const token = crypto.randomUUID();
+            await db.execute(
+                `insert into client_portal_invitations
+                    (id, client_id, tenant_id, kind, token_hash, recipient_email, expires_at, created_by,
+                     created_at, updated_at)
+                 values ($1, $2, $3, $4, $5, 'undangan@worker.test', now() at time zone 'utc' + interval '7 days',
+                         $6, now(), now())`,
+                [
+                    Bun.randomUUIDv7(),
+                    created.client_id,
+                    created.tenant_id,
+                    kind,
+                    hashInvitationToken(token),
+                    await operator(),
+                ],
+            );
+            expect(
+                await acceptInvitation(
+                    db,
+                    hashInvitationToken(token),
+                    {
+                        issuer: 'https://sso.example.test',
+                        subject,
+                        name: `Nama ${subject}`,
+                        email: `${subject}@worker.test`,
+                    },
+                    '198.51.100.7',
+                ),
+            ).toBe(true);
+        };
+        const syncs = async () =>
+            (
+                await pool.unsafe(
+                    "select count(*)::int as count from environment_operations where environment_id = $1 and operation = 'sync_identities'",
+                    [created.environment_id],
+                )
+            )[0]?.count;
+
+        await acceptAs('admin', 'kepala');
+        // Lingkungan yang belum selesai disiapkan belum menerima akun SSO.
+        const provision = await claim();
+        expect(provision?.operation).toBe('provision');
+        expect(await syncs()).toBe(0);
+        const firstAdminId = z
+            .object({ admin: z.object({ id: z.string() }) })
+            .parse(provision!.parameters).admin.id;
+        await close(provision!.id);
+
+        const admin = {
+            issuer: 'https://sso.example.test',
+            subject: 'kepala',
+            email: 'kepala@worker.test',
+            name: 'Nama kepala',
+            user_id: firstAdminId,
+        };
+        const sync = await claim();
+        expect(sync).toEqual({
+            id: expect.any(String),
+            operation: 'sync_identities',
+            environment_id: created.environment_id,
+            parameters: {
+                tenant_id: created.tenant_id,
+                database: provision!.parameters.database,
+                identities: [admin],
+            },
+        });
+        await close(sync!.id);
+        const applied = async () =>
+            (
+                await pool.unsafe(
+                    'select applied_identities from environments where id = $1',
+                    [created.environment_id],
+                )
+            )[0]?.applied_identities;
+        expect(await applied()).toEqual([admin]);
+        expect(await claim()).toBeNull();
+        expect(await syncs()).toBe(1);
+
+        await acceptAs('member', 'perawat');
+        const next = await claim();
+        expect(next?.operation).toBe('sync_identities');
+        expect(next?.parameters.identities).toEqual([
+            admin,
+            {
+                issuer: 'https://sso.example.test',
+                subject: 'perawat',
+                email: 'perawat@worker.test',
+                name: 'Nama perawat',
+                user_id: null,
+            },
+        ]);
+        await close(next!.id);
+        expect(await claim()).toBeNull();
+        expect(await syncs()).toBe(2);
     });
 
     test('entitlement menolak module di luar katalog, hak ganda, dan tanggal berakhir yang sudah lewat', async () => {

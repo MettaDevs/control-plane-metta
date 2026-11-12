@@ -3,6 +3,7 @@
 export { api, orpc, type ApiOutput } from './api.portal.ts';
 export { ApiError, errorText } from './api-client.ts';
 export { AuthCard } from './auth-layout.tsx';
+export { InvitationLinkDialog } from './invitation-link-dialog.tsx';
 export { definePage } from './page.ts';
 export {
     appLayoutRoute,

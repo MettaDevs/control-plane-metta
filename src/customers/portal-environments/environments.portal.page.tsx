@@ -1,9 +1,11 @@
 import { Badge } from '@control-plane-metta/ui/badge';
+import { Button } from '@control-plane-metta/ui/button';
 import { DataTable, DataTableText } from '@control-plane-metta/ui/data-table';
 import { displayDate } from '@control-plane-metta/ui/date-picker';
 import { ListPageLayout } from '@control-plane-metta/ui/list-page-layout';
 import { RecordActionBar } from '@control-plane-metta/ui/record-action-bar';
 import { useSuspenseQuery } from '@tanstack/react-query';
+import { ExternalLink } from 'lucide-react';
 import type { ReactNode } from 'react';
 import {
     definePage,
@@ -15,72 +17,41 @@ import {
     environmentStatus,
 } from '../customer/environment-labels.tsx';
 
-type Customer = ApiOutput<'listEnvironments'>['customers'][number];
-type Tenant = Customer['tenants'][number];
-type Row = {
-    customer: Customer;
-    environment: Tenant['environments'][number];
-};
+type Tenant = ApiOutput<'listEnvironments'>['tenant'];
 
-function rowsOf(customers: Customer[]): Row[] {
-    return customers.flatMap((customer) =>
-        customer.tenants.flatMap((tenant) =>
-            tenant.environments.map((environment) => ({
-                customer,
-                environment,
-            })),
-        ),
-    );
-}
-
-// Module yang boleh dipakai setiap klinik. Berlaku untuk semua lingkungan kliniknya, jadi ditulis sekali per klinik
-// di atas daftar, bukan di setiap baris.
-function ModuleSummary({ customers }: { customers: Customer[] }): ReactNode {
+// Module yang boleh dipakai klinik aktif. Berlaku untuk semua lingkungannya, jadi ditulis sekali di atas daftar, bukan
+// di setiap baris.
+function ModuleSummary({ tenant }: { tenant: Tenant }): ReactNode {
     return (
-        <div className="flex flex-col gap-3 px-6 pb-4">
-            {customers.flatMap((customer) =>
-                customer.tenants.map((tenant) => (
-                    <section
-                        key={tenant.id}
-                        className="flex flex-col gap-2 rounded-lg border p-4"
-                    >
-                        <h2 className="text-sm font-semibold">
-                            {customer.legal_name}
-                            {customer.tenants.length > 1 && (
-                                <span className="font-normal text-muted-foreground">
-                                    {' '}
-                                    ({tenant.name})
-                                </span>
-                            )}
-                        </h2>
-                        {tenant.modules.length ? (
-                            <ul className="flex flex-wrap gap-2">
-                                {tenant.modules.map((module) => (
-                                    <li key={module.id}>
-                                        <Badge variant="secondary">
-                                            {module.name}
-                                            {module.ends_on &&
-                                                ` · sampai ${displayDate(module.ends_on)}`}
-                                        </Badge>
-                                    </li>
-                                ))}
-                            </ul>
-                        ) : (
-                            <p className="text-sm text-muted-foreground">
-                                Belum ada module yang aktif.
-                            </p>
-                        )}
-                    </section>
-                )),
-            )}
+        <div className="px-6 pb-4">
+            <section className="flex flex-col gap-2 rounded-lg border p-4">
+                <h2 className="text-sm font-semibold">Module aktif</h2>
+                {tenant.modules.length ? (
+                    <ul className="flex flex-wrap gap-2">
+                        {tenant.modules.map((module) => (
+                            <li key={module.id}>
+                                <Badge variant="secondary">
+                                    {module.name}
+                                    {module.ends_on &&
+                                        ` · sampai ${displayDate(module.ends_on)}`}
+                                </Badge>
+                            </li>
+                        ))}
+                    </ul>
+                ) : (
+                    <p className="text-sm text-muted-foreground">
+                        Belum ada module yang aktif.
+                    </p>
+                )}
+            </section>
         </div>
     );
 }
 
 function EnvironmentsPage(): ReactNode {
-    const { data: customers } = useSuspenseQuery(
+    const { data: tenant } = useSuspenseQuery(
         orpc.listEnvironments.queryOptions({
-            select: (response) => response.customers,
+            select: (response) => response.tenant,
         }),
     );
 
@@ -89,41 +60,30 @@ function EnvironmentsPage(): ReactNode {
             header={
                 <>
                     <RecordActionBar title="Lingkungan" />
-                    <ModuleSummary customers={customers} />
+                    <ModuleSummary tenant={tenant} />
                 </>
             }
         >
             <DataTable
-                data={rowsOf(customers)}
-                getRowKey={(row) => row.environment.id}
-                getRowLabel={(row) => row.environment.name}
+                data={tenant.environments}
+                getRowKey={(environment) => environment.id}
+                getRowLabel={(environment) => environment.name}
                 emptyMessage="Belum ada lingkungan. Lingkungan muncul di sini begitu selesai disiapkan."
                 columns={[
                     {
-                        id: 'customer',
-                        header: 'Klinik',
-                        cell: (row) => (
-                            <DataTableText>
-                                {row.customer.legal_name}
-                            </DataTableText>
-                        ),
-                        sortValue: (row) => row.customer.legal_name,
-                        minWidth: 200,
-                    },
-                    {
                         id: 'environment',
                         header: 'Lingkungan',
-                        cell: (row) => (
-                            <EnvironmentName environment={row.environment} />
+                        cell: (environment) => (
+                            <EnvironmentName environment={environment} />
                         ),
                         minWidth: 160,
                     },
                     {
                         id: 'status',
                         header: 'Status',
-                        cell: (row) => {
+                        cell: (environment) => {
                             const status = environmentStatus(
-                                row.environment.status,
+                                environment.status,
                             );
                             return (
                                 <Badge variant={status.variant}>
@@ -135,35 +95,48 @@ function EnvironmentsPage(): ReactNode {
                     {
                         id: 'address',
                         header: 'Alamat',
-                        cell: (row) =>
-                            row.environment.address ? (
-                                <a
-                                    href={row.environment.address}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="text-sm text-primary underline-offset-4 hover:underline"
-                                >
-                                    {row.environment.address.replace(
-                                        /^https?:\/\//,
-                                        '',
-                                    )}
-                                </a>
-                            ) : (
-                                <DataTableText>-</DataTableText>
-                            ),
+                        cell: (environment) => (
+                            <DataTableText>
+                                {environment.address?.replace(
+                                    /^https?:\/\//,
+                                    '',
+                                ) ?? '-'}
+                            </DataTableText>
+                        ),
                         minWidth: 240,
                     },
                     {
                         id: 'expires_at',
                         header: 'Berlaku sampai',
-                        cell: (row) => (
+                        cell: (environment) => (
                             <DataTableText>
-                                {row.environment.expires_at
-                                    ? displayDate(row.environment.expires_at)
+                                {environment.expires_at
+                                    ? displayDate(environment.expires_at)
                                     : 'Tanpa batas'}
                             </DataTableText>
                         ),
-                        sortValue: (row) => row.environment.expires_at ?? '',
+                        sortValue: (environment) =>
+                            environment.expires_at ?? '',
+                    },
+                    {
+                        // Masuk lewat SSO klinik: akun yang sudah login di penyedia SSO langsung masuk tanpa mengetik
+                        // password lagi.
+                        id: 'open',
+                        header: '',
+                        cell: (environment) =>
+                            environment.address &&
+                            environment.status === 'active' ? (
+                                <Button variant="outline" size="sm" asChild>
+                                    <a
+                                        href={`${environment.address}/sso/start`}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                    >
+                                        <ExternalLink />
+                                        Buka
+                                    </a>
+                                </Button>
+                            ) : null,
                     },
                 ]}
             />

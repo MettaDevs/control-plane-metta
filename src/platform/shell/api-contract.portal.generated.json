@@ -59,6 +59,18 @@
             "route": { "method": "GET", "path": "/api/v1/me" }
         }
     },
+    "chooseTenant": {
+        "~orpc": {
+            "errorMap": {},
+            "meta": {},
+            "route": {
+                "method": "PUT",
+                "path": "/api/v1/active-tenant",
+                "inputStructure": "detailed",
+                "successStatus": 204
+            }
+        }
+    },
     "logout": {
         "~orpc": {
             "errorMap": {},
@@ -75,6 +87,48 @@
             "errorMap": {},
             "meta": {},
             "route": { "method": "GET", "path": "/api/v1/environments" }
+        }
+    },
+    "listMembers": {
+        "~orpc": {
+            "errorMap": {},
+            "meta": {},
+            "route": { "method": "GET", "path": "/api/v1/members" }
+        }
+    },
+    "inviteMember": {
+        "~orpc": {
+            "errorMap": {},
+            "meta": {},
+            "route": {
+                "method": "POST",
+                "path": "/api/v1/members/invitations",
+                "inputStructure": "detailed",
+                "successStatus": 201
+            }
+        }
+    },
+    "resendMemberInvitation": {
+        "~orpc": {
+            "errorMap": {},
+            "meta": {},
+            "route": {
+                "method": "POST",
+                "path": "/api/v1/members/invitations/{invitation}/resend",
+                "inputStructure": "detailed"
+            }
+        }
+    },
+    "cancelMemberInvitation": {
+        "~orpc": {
+            "errorMap": {},
+            "meta": {},
+            "route": {
+                "method": "DELETE",
+                "path": "/api/v1/members/invitations/{invitation}",
+                "inputStructure": "detailed",
+                "successStatus": 204
+            }
         }
     }
 }

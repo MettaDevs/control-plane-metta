@@ -14,6 +14,12 @@ import {
     revokePortalUser,
 } from './portal-access.service.ts';
 
+// Undangan dari konsol selalu undangan member ke satu tenant customer itu. Undangan admin hanya lahir saat customer
+// dibuat.
+const consoleInvitationSchema = invitationInputSchema.extend({
+    tenant_id: z.uuid('Pilih klinik tujuan undangan.'),
+});
+
 export function portalAccessConsoleRoutes(
     config: Config,
     session: ConsoleSession,
@@ -42,11 +48,11 @@ export function portalAccessConsoleRoutes(
             .input(
                 z.object({
                     params: z.object({ client: z.uuid() }),
-                    body: z.custom<z.input<typeof invitationInputSchema>>(),
+                    body: z.custom<z.input<typeof consoleInvitationSchema>>(),
                 }),
             )
             .handler(async ({ context, input }) => {
-                const body = invitationInputSchema.safeParse(input.body);
+                const body = consoleInvitationSchema.safeParse(input.body);
                 if (!body.success)
                     throw new HttpFailure(422, {
                         message: 'Periksa isian undangan.',
@@ -59,8 +65,15 @@ export function portalAccessConsoleRoutes(
                         operatorId: context.operator.id,
                         ipAddress: context.clientAddress,
                     },
-                    input.params.client,
-                    body.data,
+                    {
+                        clientId: input.params.client,
+                        tenantId: body.data.tenant_id,
+                        kind: 'member',
+                    },
+                    {
+                        recipient_email: body.data.recipient_email,
+                        recipient_name: body.data.recipient_name,
+                    },
                 );
             }),
         resendPortalInvitation: operatorProcedure

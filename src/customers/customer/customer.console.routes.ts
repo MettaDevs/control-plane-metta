@@ -96,13 +96,18 @@ export function customerConsoleRoutes(config: Config, session: ConsoleSession) {
                 );
                 // Admin pertama langsung diundang ke portal klien bila portal disetel. Hanya pada jawaban pertama:
                 // permintaan ulang dengan kunci yang sama (password sementara null) tidak mengirim email kedua.
+                // Undangan admin: akun SSO penerimanya ditautkan ke admin pertama klinik.
                 const portalInvitation =
                     config.portal && created.temporary_password !== null
                         ? await inviteToPortal(
                               context.db,
                               config,
                               actor,
-                              created.client_id,
+                              {
+                                  clientId: created.client_id,
+                                  tenantId: created.tenant_id,
+                                  kind: 'admin',
+                              },
                               {
                                   recipient_email: body.data.admin.email,
                                   recipient_name: body.data.admin.name,

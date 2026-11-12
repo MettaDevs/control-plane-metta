@@ -154,8 +154,10 @@ describe.skipIf(!process.env.DB_HOST)('portal klien lewat SSO', () => {
         const token = crypto.randomUUID();
         await db.execute(
             `insert into client_portal_invitations
-                (id, client_id, token_hash, recipient_email, expires_at, created_by, deleted_at, created_at, updated_at)
-             values ($1, $2, $3, 'penerima@klinik.test', now() at time zone 'utc' + make_interval(days => $4), $5,
+                (id, client_id, tenant_id, kind, token_hash, recipient_email, expires_at, created_by, deleted_at,
+                 created_at, updated_at)
+             values ($1, $2, (select id from tenants where client_id = $2), 'member', $3, 'penerima@klinik.test',
+                     now() at time zone 'utc' + make_interval(days => $4), $5,
                      case when $6 then now() at time zone 'utc' end, now(), now())`,
             [
                 Bun.randomUUIDv7(),
@@ -213,12 +215,29 @@ describe.skipIf(!process.env.DB_HOST)('portal klien lewat SSO', () => {
 
         const me = await call('/api/v1/me', { cookie: session });
         expect(me.status).toBe(200);
+        const tenantId = z
+            .string()
+            .parse(
+                (
+                    await pool.unsafe(
+                        'select id from tenants where client_id = $1',
+                        [clientId],
+                    )
+                )[0]?.id,
+            );
         expect(await me.json()).toEqual({
             name: 'Kepala Klinik',
             email: 'akun-lain@contoh.test',
-            customers: [
-                { client_id: clientId, legal_name: 'Klinik Undangan Sehat' },
+            tenants: [
+                {
+                    id: tenantId,
+                    name: 'Klinik Undangan Sehat',
+                    client_id: clientId,
+                    legal_name: 'Klinik Undangan Sehat',
+                    is_admin: false,
+                },
             ],
+            active_tenant_id: tenantId,
         });
 
         // Tautan yang sudah dipakai tidak bisa dipakai lagi, juga oleh akun yang sama.
@@ -309,27 +328,20 @@ describe.skipIf(!process.env.DB_HOST)('portal klien lewat SSO', () => {
         expect(listed.status).toBe(200);
         const body = z
             .object({
-                customers: z.array(
-                    z.object({
-                        client_id: z.string(),
-                        legal_name: z.string(),
-                        tenants: z.array(
-                            z.object({
-                                environments: z.array(
-                                    z.object({
-                                        kind: z.string(),
-                                        name: z.string(),
-                                    }),
-                                ),
-                                modules: z.array(z.unknown()),
-                            }),
-                        ),
-                    }),
-                ),
+                tenant: z.object({
+                    legal_name: z.string(),
+                    environments: z.array(
+                        z.object({
+                            kind: z.string(),
+                            name: z.string(),
+                        }),
+                    ),
+                    modules: z.array(z.unknown()),
+                }),
             })
             .parse(await listed.json());
-        expect(body.customers.map((item) => item.client_id)).toEqual([own]);
-        expect(body.customers[0]!.tenants[0]!.environments).toEqual([
+        expect(body.tenant.legal_name).toBe('Klinik Milik Sendiri');
+        expect(body.tenant.environments).toEqual([
             expect.objectContaining({ kind: 'production', name: 'Produksi' }),
         ]);
         expect(JSON.stringify(body)).not.toContain(other);

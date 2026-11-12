@@ -9,6 +9,7 @@ import {
 } from '../../platform/http/index.ts';
 import { SecretBox } from '../../platform/secret-box/index.ts';
 import {
+    activeTenant,
     hasLiveAccess,
     type PortalIdentity,
 } from './portal-identity.service.ts';
@@ -26,6 +27,9 @@ const sessionSchema = z.object({
 
 export function portalSession(config: Config) {
     const cookieName = `${config.SESSION_COOKIE}_portal`;
+    // Tenant aktif, pilihan pengguna di header portal. Isinya hanya id tenant: setiap request memeriksa ulang bahwa
+    // identitas sesi masih memegang akses ke tenant itu, dan yang tidak lagi dipegang diganti tenant pertamanya.
+    const tenantCookieName = `${cookieName}_tenant`;
     const box = new SecretBox(config.key, 'portal-session');
     const secure = config.SESSION_SECURE_COOKIE === 'true';
     const lifetime = config.SESSION_LIFETIME * 60;
@@ -51,6 +55,16 @@ export function portalSession(config: Config) {
 
     function clear(context: Context) {
         setCookie(context, cookieName, '', 0, { secure });
+        setCookie(context, tenantCookieName, '', 0, { secure });
+    }
+
+    // Menggantikan cookie tenant yang sudah dipasang request ini, supaya jawabannya hanya membawa satu pilihan.
+    function chooseTenant(context: Context, tenantId: string) {
+        const previous = context.setCookies.findIndex((cookie) =>
+            cookie.startsWith(`${tenantCookieName}=`),
+        );
+        if (previous >= 0) context.setCookies.splice(previous, 1);
+        setCookie(context, tenantCookieName, tenantId, lifetime, { secure });
     }
 
     function read(context: Context): z.infer<typeof sessionSchema> | null {
@@ -71,20 +85,24 @@ export function portalSession(config: Config) {
             issuer: session.issuer,
             subject: session.subject,
         };
-        if (
-            !session ||
-            !identity ||
-            !(await hasLiveAccess(context.db, identity, session.issuedAt))
-        ) {
+        const chosen = readCookie(context.request, tenantCookieName);
+        const tenant =
+            session &&
+            identity &&
+            (await hasLiveAccess(context.db, identity, session.issuedAt))
+                ? await activeTenant(context.db, identity, chosen)
+                : null;
+        if (!session || !identity || !tenant) {
             if (session) clear(context);
             throw new HttpFailure(401, { message: 'Unauthenticated.' });
         }
         // Masa sesi diperpanjang di setiap request, sama dengan sesi konsol; waktu login tetap.
         issue(context, identity, session.issuedAt);
-        return next({ context: { identity } });
+        chooseTenant(context, tenant.tenant_id);
+        return next({ context: { identity, tenant } });
     });
 
-    return { cookieName, issue, clear, clientProcedure, secure };
+    return { cookieName, issue, clear, chooseTenant, clientProcedure, secure };
 }
 
 export type PortalSession = ReturnType<typeof portalSession>;

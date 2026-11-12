@@ -3,6 +3,7 @@
 import { createRoute, createRouter } from '@tanstack/react-router';
 import { page as customersPortalAccessInvitationPage } from './customers/portal-access/invitation.portal.page.tsx';
 import { page as customersPortalEnvironmentsEnvironmentsPage } from './customers/portal-environments/environments.portal.page.tsx';
+import { page as customersPortalMembersMembersPage } from './customers/portal-members/members.portal.page.tsx';
 import { page as platformShellLoginPage } from './platform/shell/login.portal.page.tsx';
 import {
     appLayoutRoute,
@@ -27,6 +28,13 @@ const customersPortalEnvironmentsEnvironmentsRoute = createRoute({
     staticData: { title: customersPortalEnvironmentsEnvironmentsPage.title },
 });
 
+const customersPortalMembersMembersRoute = createRoute({
+    getParentRoute: () => appLayoutRoute,
+    path: customersPortalMembersMembersPage.path,
+    component: customersPortalMembersMembersPage.component,
+    staticData: { title: customersPortalMembersMembersPage.title },
+});
+
 const platformShellLoginRoute = createRoute({
     getParentRoute: () => authLayoutRoute,
     path: platformShellLoginPage.path,
@@ -36,7 +44,10 @@ const platformShellLoginRoute = createRoute({
 });
 
 const routeTree = rootRoute.addChildren([
-    appLayoutRoute.addChildren([customersPortalEnvironmentsEnvironmentsRoute]),
+    appLayoutRoute.addChildren([
+        customersPortalEnvironmentsEnvironmentsRoute,
+        customersPortalMembersMembersRoute,
+    ]),
     authLayoutRoute.addChildren([
         customersPortalAccessInvitationRoute,
         platformShellLoginRoute,
