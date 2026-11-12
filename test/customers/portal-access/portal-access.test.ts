@@ -4,7 +4,6 @@ import { z } from 'zod';
 import { createCustomer } from '../../../src/customers/customer/customer.service.ts';
 import {
     cancelPortalInvitation,
-    hashInvitationToken,
     inviteToPortal,
     listPortalAccess,
     resendPortalInvitation,
@@ -13,6 +12,7 @@ import {
 import { addRuntimeHost } from '../../../src/environments/index.ts';
 import { loadConfig } from '../../../src/platform/config/index.ts';
 import { createPool, Database } from '../../../src/platform/database/index.ts';
+import { hashInvitationToken } from '../../../src/platform/oidc/index.ts';
 import { createOperator } from '../../../src/platform/operator-identity/index.ts';
 
 // Penyedia SSO tiruan yang benar-benar menerima HTTP, supaya bentuk permintaan undangan ikut diperiksa.

@@ -1,4 +1,5 @@
 import type { Config } from '../config/index.ts';
+import { operatorInvitationRoutes } from './invitation/invitation.console.routes.ts';
 import { loginRoutes } from './login/login.console.routes.ts';
 import { type ConsoleSession, consoleSession } from './session.console.ts';
 import { ssoRoutes } from './sso/sso.console.routes.ts';
@@ -15,5 +16,6 @@ export function operatorIdentityRoutes(
         ...loginRoutes(config, session),
         ...twoFactorRoutes(config, session),
         ...ssoRoutes(config, session),
+        ...operatorInvitationRoutes(config, session),
     };
 }

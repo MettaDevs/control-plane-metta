@@ -17,13 +17,13 @@ import { FormControl, FormGrid } from '@control-plane-metta/ui/form-control';
 import { Input } from '@control-plane-metta/ui/input';
 import { useConfirmation } from '@control-plane-metta/ui/use-confirmation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Copy } from 'lucide-react';
 import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { toast } from 'sonner';
 import {
     ApiError,
     errorText,
+    InvitationLinkDialog,
     orpc,
     type ApiOutput,
 } from '../../platform/shell/index.ts';
@@ -49,62 +49,6 @@ function statusOf(row: Access): {
     if (!row.notified)
         return { label: 'Email belum terkirim', variant: 'destructive' };
     return { label: 'Undangan terkirim', variant: 'secondary' };
-}
-
-// Email gagal terkirim: tautan tetap berlaku, jadi operator bisa mengirimkannya sendiri. Tautan hanya tampil di sini.
-function SendFailureDialog({
-    sent,
-    onClose,
-}: {
-    sent: Sent;
-    onClose: () => void;
-}): ReactNode {
-    return (
-        <Dialog open onOpenChange={(open) => !open && onClose()}>
-            <DialogContent size="compact">
-                <DialogHeader>
-                    <DialogTitle>Email undangan belum terkirim</DialogTitle>
-                    <DialogDescription>
-                        {sent.email_failure} Undangannya tetap tersimpan. Kirim
-                        ulang nanti, atau kirim tautan ini sendiri lewat jalur
-                        pribadi. Tautan ini tidak akan ditampilkan lagi.
-                    </DialogDescription>
-                </DialogHeader>
-                <DialogBody className="flex flex-col gap-3">
-                    <code className="rounded-md border bg-muted px-3 py-2 font-mono text-xs break-all select-all">
-                        {sent.accept_url}
-                    </code>
-                    <div>
-                        <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={async () => {
-                                try {
-                                    await navigator.clipboard.writeText(
-                                        sent.accept_url,
-                                    );
-                                    toast.success('Tautan disalin.');
-                                } catch {
-                                    toast.error(
-                                        'Tautan belum tersalin. Pilih teksnya lalu salin manual.',
-                                    );
-                                }
-                            }}
-                        >
-                            <Copy />
-                            Salin tautan
-                        </Button>
-                    </div>
-                </DialogBody>
-                <DialogFooter>
-                    <DialogAction type="button" onClick={onClose}>
-                        Tutup
-                    </DialogAction>
-                </DialogFooter>
-            </DialogContent>
-        </Dialog>
-    );
 }
 
 function InviteDialog({
@@ -382,7 +326,7 @@ export function PortalAccessSection({
                 />
             )}
             {failed && (
-                <SendFailureDialog
+                <InvitationLinkDialog
                     sent={failed}
                     onClose={() => setFailed(null)}
                 />

@@ -1,11 +1,13 @@
 import { z } from 'zod';
 import type { Config } from '../../platform/config/index.ts';
 import { HttpFailure } from '../../platform/http/index.ts';
+import {
+    invitationInputErrors,
+    invitationInputSchema,
+} from '../../platform/oidc/index.ts';
 import type { ConsoleSession } from '../../platform/operator-identity/index.console.ts';
 import {
     cancelPortalInvitation,
-    invitationInputErrors,
-    invitationInputSchema,
     inviteToPortal,
     listPortalAccess,
     resendPortalInvitation,

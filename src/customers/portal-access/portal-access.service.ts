@@ -1,47 +1,20 @@
-import { createHash, randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import type { Config } from '../../platform/config/index.ts';
 import { recordAudit } from '../../platform/audit/index.ts';
 import type { Database } from '../../platform/database/index.ts';
 import { HttpFailure } from '../../platform/http/index.ts';
-import { sendInvitationEmail } from './sso-invitation.ts';
+import {
+    type InvitationInput,
+    invitationDays,
+    newInvitationToken,
+    sendInvitationEmail,
+} from '../../platform/oidc/index.ts';
 
 type Actor = { operatorId: string; ipAddress: string | null };
 
 const now = "now() at time zone 'utc'";
 const iso = (column: string) =>
     `to_char(${column}, 'YYYY-MM-DD"T"HH24:MI:SS"Z"')`;
-
-export const invitationDays = 7;
-
-export const invitationInputSchema = z.strictObject({
-    recipient_email: z
-        .email('Isi alamat email yang benar.')
-        .max(255, 'Email paling panjang 255 karakter.')
-        .toLowerCase(),
-    recipient_name: z
-        .string()
-        .trim()
-        .max(255, 'Nama paling panjang 255 karakter.')
-        .nullable()
-        .transform((value) => value || null),
-});
-export type InvitationInput = z.infer<typeof invitationInputSchema>;
-
-export function invitationInputErrors(
-    error: z.ZodError,
-): Record<string, string[]> {
-    return Object.fromEntries(
-        error.issues.map((issue) => [
-            issue.path.join('.') || '_form',
-            [issue.message],
-        ]),
-    );
-}
-
-export function hashInvitationToken(token: string): string {
-    return createHash('sha256').update(token).digest('hex');
-}
 
 function portalOf(config: Config) {
     if (!config.portal)
@@ -75,8 +48,8 @@ async function issueAndSend(
     } | null>,
 ): Promise<InvitationSent> {
     const portal = portalOf(config);
-    const token = randomBytes(32).toString('base64url');
-    const invitation = await rotate(hashInvitationToken(token));
+    const { token, hash } = newInvitationToken();
+    const invitation = await rotate(hash);
     if (!invitation)
         throw new HttpFailure(404, {
             error: 'invitation_not_found',
@@ -84,12 +57,14 @@ async function issueAndSend(
                 'Undangan tidak ditemukan, sudah dipakai, atau sudah dibatalkan.',
         });
     const acceptUrl = `${portal.url}/invitation?token=${token}`;
-    const failure = await sendInvitationEmail(portal, {
+    const failure = await sendInvitationEmail(portal.sso, 'PORTAL_SSO', {
         recipientEmail: invitation.recipient_email,
         recipientName: invitation.recipient_name,
         acceptUrl,
         expiresInDays: invitationDays,
         invitedBy: invitation.invited_by,
+        appName: 'Portal klien',
+        roleName: 'Admin klinik',
     });
     if (failure === null)
         await db.execute(

@@ -2,13 +2,11 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { generateKeyPairSync } from 'node:crypto';
 import { z } from 'zod';
 import { createCustomer } from '../../../src/customers/customer/customer.service.ts';
-import {
-    hashInvitationToken,
-    revokePortalUser,
-} from '../../../src/customers/portal-access/portal-access.service.ts';
+import { revokePortalUser } from '../../../src/customers/portal-access/portal-access.service.ts';
 import { addRuntimeHost } from '../../../src/environments/index.ts';
 import { loadConfig } from '../../../src/platform/config/index.ts';
 import { createPool, Database } from '../../../src/platform/database/index.ts';
+import { hashInvitationToken } from '../../../src/platform/oidc/index.ts';
 import { createApplication } from '../../../src/platform/http/index.ts';
 import { createOperator } from '../../../src/platform/operator-identity/index.ts';
 import { portalRouter } from '../../../src/portal.ts';

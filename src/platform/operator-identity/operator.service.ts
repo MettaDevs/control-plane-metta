@@ -9,8 +9,9 @@ export const operatorSchema = z.object({
 });
 export type Operator = z.infer<typeof operatorSchema>;
 
+// Operator dari undangan hanya masuk lewat SSO dan tidak punya password.
 const credentialSchema = operatorSchema.extend({
-    password: z.string(),
+    password: z.string().nullable(),
     two_factor: z.boolean(),
 });
 
@@ -31,21 +32,36 @@ export async function createOperator(
     actor: { operatorId: string | null; ipAddress: string | null },
 ): Promise<Operator> {
     const { name, email, password } = newOperatorSchema.parse(input);
-    const operator = { id: Bun.randomUUIDv7(), name, email };
     const hash = await Bun.password.hash(password);
-    await db.transaction(async () => {
-        await db.execute(
-            `insert into operators (id, name, email, password, created_at, updated_at)
-             values ($1, $2, $3, $4, now() at time zone 'utc', now() at time zone 'utc')`,
-            [operator.id, name, email, hash],
-        );
-        await recordAudit(db, {
-            ...actor,
-            action: 'operator.created',
-            subjectType: 'operator',
-            subjectId: operator.id,
-            detail: { email },
-        });
+    return db.transaction(() =>
+        insertOperator(db, { name, email, password: hash }, actor),
+    );
+}
+
+// Baris operator beserta jejak auditnya, di transaksi pemanggil. password null untuk operator yang hanya masuk lewat
+// SSO.
+export async function insertOperator(
+    db: Database,
+    input: { name: string; email: string; password: string | null },
+    actor: { operatorId: string | null; ipAddress: string | null },
+    detail: Record<string, unknown> = {},
+): Promise<Operator> {
+    const operator = {
+        id: Bun.randomUUIDv7(),
+        name: input.name,
+        email: input.email,
+    };
+    await db.execute(
+        `insert into operators (id, name, email, password, created_at, updated_at)
+         values ($1, $2, $3, $4, now() at time zone 'utc', now() at time zone 'utc')`,
+        [operator.id, input.name, input.email, input.password],
+    );
+    await recordAudit(db, {
+        ...actor,
+        action: 'operator.created',
+        subjectType: 'operator',
+        subjectId: operator.id,
+        detail: { email: input.email, ...detail },
     });
     return operator;
 }
@@ -58,11 +74,12 @@ async function checkPassword(
     password: string,
 ): Promise<{ operator: Operator; twoFactor: boolean } | null> {
     // Bun.password.verify juga membaca hash bcrypt, bentuk password dari data CoreERP yang kelak dipindah ke sini.
+    // Operator tanpa password diperiksa terhadap hash pembanding, jadi jawabannya sama dengan password yang salah.
     const valid = await Bun.password.verify(
         password,
         row?.password ?? absentHash,
     );
-    if (!row || !valid) return null;
+    if (!row || row.password === null || !valid) return null;
     const { password: _, two_factor, ...operator } = row;
     return { operator, twoFactor: two_factor };
 }
@@ -92,6 +109,20 @@ export async function confirmPassword(
         [operatorId],
     );
     return (await checkPassword(row, password)) !== null;
+}
+
+// Operator dari undangan tidak punya password, jadi tindakan yang meminta password diketik ulang tidak bisa ia
+// jalankan, dan tautan SSO-nya tidak boleh dilepas karena itu satu-satunya jalan masuknya.
+export async function hasPassword(
+    db: Database,
+    operatorId: string,
+): Promise<boolean> {
+    const row = await db.one(
+        z.object({ present: z.boolean() }),
+        'select password is not null as present from operators where id = $1',
+        [operatorId],
+    );
+    return row?.present ?? false;
 }
 
 export async function twoFactorEnabled(

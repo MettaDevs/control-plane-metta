@@ -25,7 +25,7 @@ export function AppSidebarHeader({
     isScrolled = false,
 }: {
     operator: Operator;
-    sso: { linked: boolean } | null;
+    sso: { linked: boolean; has_password: boolean } | null;
     isScrolled?: boolean;
 }) {
     const [linking, setLinking] = useState(false);

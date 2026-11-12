@@ -8,6 +8,15 @@ export class OidcStub {
     readonly clientId = 'console-test-client';
     readonly clientSecret = 'console-test-secret';
     private readonly grants = new Map<string, Grant>();
+    // Permintaan email undangan yang diterima, dan jawaban berikutnya untuk permintaan itu.
+    readonly invitations: {
+        headers: Headers;
+        body: Record<string, unknown>;
+    }[] = [];
+    invitationReply: { status: number; body: unknown } = {
+        status: 200,
+        body: { message: 'ok' },
+    };
     private keys: { kid: string; pair: CryptoKeyPair }[] = [];
     private server!: ReturnType<typeof Bun.serve>;
 
@@ -124,6 +133,18 @@ export class OidcStub {
                     })),
                 ),
             });
+        if (
+            pathname === '/api/v1/notifications/send-invitation' &&
+            request.method === 'POST'
+        ) {
+            this.invitations.push({
+                headers: request.headers,
+                body: (await request.json()) as Record<string, unknown>,
+            });
+            return Response.json(this.invitationReply.body, {
+                status: this.invitationReply.status,
+            });
+        }
         if (pathname === '/token' && request.method === 'POST') {
             const expected = `Basic ${Buffer.from(`${this.clientId}:${this.clientSecret}`).toString('base64')}`;
             if (request.headers.get('authorization') !== expected)
