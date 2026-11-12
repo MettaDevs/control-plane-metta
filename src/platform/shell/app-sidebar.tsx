@@ -18,10 +18,11 @@ export function AppSidebar() {
     const [previewId, setPreviewId] = useState<string | null>(null);
     const [pinnedId, setPinnedId] = useState<string | null>(null);
     const [previousUrl, setPreviousUrl] = useState(url);
+    const [pointerInside, setPointerInside] = useState(false);
 
     if (previousUrl !== url) {
         setPreviousUrl(url);
-        setPreviewId(null);
+        if (!pointerInside) setPreviewId(null);
         setPinnedId(null);
     }
 
@@ -46,7 +47,11 @@ export function AppSidebar() {
         <Sidebar
             collapsible="icon"
             className="z-30 border-r border-sidebar-border bg-sidebar"
-            onMouseLeave={() => setPreviewId(null)}
+            onMouseEnter={() => setPointerInside(true)}
+            onMouseLeave={() => {
+                setPointerInside(false);
+                setPreviewId(null);
+            }}
             onBlur={(event) => {
                 if (!event.currentTarget.contains(event.relatedTarget))
                     setPreviewId(null);
