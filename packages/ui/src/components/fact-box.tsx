@@ -11,7 +11,6 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { cn } from '../utils';
 import { Button } from './button';
-import { Card, CardContent, CardHeader } from './card';
 import {
     Collapsible,
     CollapsibleContent,
@@ -229,9 +228,8 @@ export function FactBox({
                 id={panelId}
                 aria-label="Detail dan lampiran"
                 className={cn(
-                    'min-w-0 xl:sticky xl:top-0',
+                    'min-w-0 bg-background xl:sticky xl:top-0',
                     fillHeight && 'min-h-0 xl:overflow-y-auto',
-                    fillHeight && open && 'xl:ps-3',
                     externalToolbar && !open && 'hidden',
                 )}
             >
@@ -239,40 +237,44 @@ export function FactBox({
                     ? toolbarContainer &&
                       createPortal(controls, toolbarContainer)
                     : controls}
+                {/* Panel rata seperti FactBox BC: tanpa bingkai kartu, dipisah garis pembatas, tab bergaris bawah. */}
                 <CollapsibleContent>
-                    <Tabs value={tab} onValueChange={setTab}>
-                        <Card>
-                            <CardHeader>
-                                <TabsList
-                                    variant="line"
-                                    aria-label="Informasi pendamping"
+                    <Tabs value={tab} onValueChange={setTab} className="gap-0">
+                        <div className="border-b px-3 pt-1">
+                            <TabsList
+                                variant="line"
+                                aria-label="Informasi pendamping"
+                                className="h-9 p-0"
+                            >
+                                <TabsTrigger
+                                    value="details"
+                                    className="flex-none after:bg-primary group-data-[orientation=horizontal]/tabs:after:bottom-[-2px]"
                                 >
-                                    <TabsTrigger value="details">
-                                        <Info />
-                                        Detail
-                                    </TabsTrigger>
-                                    <TabsTrigger value="attachments">
-                                        <Paperclip />
-                                        Lampiran
-                                        {attachmentCount != null
-                                            ? ` (${attachmentCount})`
-                                            : ''}
-                                    </TabsTrigger>
-                                </TabsList>
-                            </CardHeader>
-                            <CardContent>
-                                <TabsContent value="details">
-                                    {details}
-                                </TabsContent>
-                                <TabsContent
+                                    <Info />
+                                    Detail
+                                </TabsTrigger>
+                                <TabsTrigger
                                     value="attachments"
-                                    forceMount
-                                    className="data-[state=inactive]:hidden"
+                                    className="flex-none after:bg-primary group-data-[orientation=horizontal]/tabs:after:bottom-[-2px]"
                                 >
-                                    {attachments}
-                                </TabsContent>
-                            </CardContent>
-                        </Card>
+                                    <Paperclip />
+                                    Lampiran
+                                    {attachmentCount != null
+                                        ? ` (${attachmentCount})`
+                                        : ''}
+                                </TabsTrigger>
+                            </TabsList>
+                        </div>
+                        <div className="p-3 text-sm">
+                            <TabsContent value="details">{details}</TabsContent>
+                            <TabsContent
+                                value="attachments"
+                                forceMount
+                                className="data-[state=inactive]:hidden"
+                            >
+                                {attachments}
+                            </TabsContent>
+                        </div>
                     </Tabs>
                 </CollapsibleContent>
             </aside>

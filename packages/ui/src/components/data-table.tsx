@@ -796,7 +796,10 @@ function DataTable<T>({
                                                 </span>
                                                 <SortIcon
                                                     className={cn(
-                                                        'size-3.5 shrink-0 text-muted-foreground transition-opacity',
+                                                        'size-3.5 shrink-0 transition-opacity',
+                                                        isSorted
+                                                            ? 'text-foreground'
+                                                            : 'text-muted-foreground',
                                                         !isSorted &&
                                                             'opacity-0 group-focus-within:opacity-60 group-hover:opacity-60',
                                                     )}
@@ -999,7 +1002,8 @@ function DataTable<T>({
                                                         : `Resize column ${column.header}`
                                                 }
                                                 className={cn(
-                                                    'absolute inset-y-0 z-10 w-2 cursor-col-resize touch-none opacity-0 outline-none group-hover:opacity-100 after:absolute after:inset-y-0 after:left-1/2 after:w-0.5 after:bg-primary focus-visible:opacity-100',
+                                                    // Seperti BC: hover header tidak memunculkan garis. Garis muncul hanya saat pegangan sendiri disentuh atau difokus; selama diseret, garis panduan yang tampil.
+                                                    'absolute inset-y-0 z-10 w-2 cursor-col-resize touch-none opacity-0 outline-none after:absolute after:inset-y-0 after:left-1/2 after:w-0.5 after:bg-primary hover:opacity-100 focus-visible:opacity-100',
                                                     // Handle ujung tetap di dalam tabel agar tidak menambah scrollWidth.
                                                     nextColumn ||
                                                         hasTrailingActions
