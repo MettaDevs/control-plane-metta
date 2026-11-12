@@ -535,7 +535,10 @@ function CustomerPage(): ReactNode {
                         {displayTime(customer.created_at)}
                     </Fact>
                 </dl>
-                <PortalAccessSection clientId={customer.client_id} />
+                <PortalAccessSection
+                    clientId={customer.client_id}
+                    tenants={customer.tenants}
+                />
                 {customer.tenants.map((tenant) => (
                     <div key={tenant.id} className="flex flex-col gap-3">
                         {customer.tenants.length > 1 && (

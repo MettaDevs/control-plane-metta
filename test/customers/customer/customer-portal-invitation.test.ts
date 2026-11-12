@@ -84,6 +84,7 @@ describe.skipIf(!process.env.DB_HOST)(
             const created = z
                 .object({
                     client_id: z.string(),
+                    tenant_id: z.string(),
                     portal_invitation: z.object({
                         id: z.string(),
                         accept_url: z.string(),
@@ -96,13 +97,16 @@ describe.skipIf(!process.env.DB_HOST)(
                 recipient_email: 'kepala@klinik.test',
                 recipient_name: 'Kepala Klinik',
                 accept_url: created.portal_invitation.accept_url,
+                role_name: 'Admin klinik',
             });
             const [invitation] = await pool.unsafe(
-                'select client_id, notified_at is not null as notified from client_portal_invitations where id = $1',
+                'select client_id, tenant_id, kind, notified_at is not null as notified from client_portal_invitations where id = $1',
                 [created.portal_invitation.id],
             );
             expect({ ...invitation }).toEqual({
                 client_id: created.client_id,
+                tenant_id: created.tenant_id,
+                kind: 'admin',
                 notified: true,
             });
 

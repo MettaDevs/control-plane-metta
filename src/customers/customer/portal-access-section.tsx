@@ -15,9 +15,10 @@ import {
 } from '@control-plane-metta/ui/dialog';
 import { FormControl, FormGrid } from '@control-plane-metta/ui/form-control';
 import { Input } from '@control-plane-metta/ui/input';
+import { Select } from '@control-plane-metta/ui/select';
 import { useConfirmation } from '@control-plane-metta/ui/use-confirmation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { toast } from 'sonner';
 import {
@@ -30,6 +31,7 @@ import {
 
 type Access = ApiOutput<'listPortalAccess'>['access'][number];
 type Sent = ApiOutput<'inviteToPortal'>;
+type Tenant = { id: string; name: string };
 
 const resendAction = { id: 'resend', label: 'Kirim ulang undangan' };
 const cancelAction = {
@@ -53,13 +55,20 @@ function statusOf(row: Access): {
 
 function InviteDialog({
     clientId,
+    tenants,
     onClose,
     onSent,
 }: {
     clientId: string;
+    tenants: Tenant[];
     onClose: () => void;
     onSent: (sent: Sent) => void;
 }): ReactNode {
+    const content = useRef<HTMLDivElement>(null);
+    // Customer dengan satu klinik langsung memilih klinik itu.
+    const [tenantId, setTenantId] = useState(
+        tenants.length === 1 ? tenants[0]!.id : '',
+    );
     const [email, setEmail] = useState('');
     const [name, setName] = useState('');
     const [errors, setErrors] = useState<Record<string, string[]>>({});
@@ -80,7 +89,7 @@ function InviteDialog({
     );
     return (
         <Dialog open onOpenChange={(open) => !open && onClose()}>
-            <DialogContent size="compact">
+            <DialogContent size="compact" ref={content}>
                 <form
                     className="contents"
                     onSubmit={(event) => {
@@ -88,6 +97,7 @@ function InviteDialog({
                         invite.mutate({
                             params: { client: clientId },
                             body: {
+                                tenant_id: tenantId,
                                 recipient_email: email,
                                 recipient_name: name || null,
                             },
@@ -98,12 +108,28 @@ function InviteDialog({
                         <DialogTitle>Undang ke portal</DialogTitle>
                         <DialogDescription>
                             Penyedia SSO mengirim email berisi tautan undangan.
-                            Penerima membukanya, lalu login SSO di portal.
-                            Tautan berlaku 7 hari dan hanya bisa dipakai sekali.
+                            Penerima membukanya, lalu login SSO di portal dan
+                            mendapat akun di klinik tanpa role. Tautan berlaku 7
+                            hari dan hanya bisa dipakai sekali.
                         </DialogDescription>
                     </DialogHeader>
                     <DialogBody>
                         <FormGrid columns={1}>
+                            <FormControl error={errors.tenant_id?.[0]}>
+                                <Select
+                                    label="Klinik"
+                                    required
+                                    items={tenants.map((tenant) => ({
+                                        value: tenant.id,
+                                        label: tenant.name,
+                                    }))}
+                                    value={tenantId}
+                                    onValueChange={(value) =>
+                                        setTenantId(value ?? '')
+                                    }
+                                    portalContainer={content}
+                                />
+                            </FormControl>
                             <FormControl error={errors.recipient_email?.[0]}>
                                 <Input
                                     label="Email"
@@ -152,8 +178,10 @@ function InviteDialog({
 // Siapa dari pihak customer yang boleh masuk portal klien, dan undangan yang masih menunggu.
 export function PortalAccessSection({
     clientId,
+    tenants,
 }: {
     clientId: string;
+    tenants: Tenant[];
 }): ReactNode {
     const queryClient = useQueryClient();
     const { confirm, confirmation } = useConfirmation();
@@ -224,7 +252,7 @@ export function PortalAccessSection({
             await confirm({
                 title: `Cabut akses portal ${who}?`,
                 description:
-                    'Akun SSO ini tidak bisa lagi masuk portal customer ini. Untuk memberi akses lagi, kirim undangan baru.',
+                    'Akun SSO ini tidak bisa lagi masuk portal klinik ini. Akunnya di dalam klinik tidak ikut dicabut; atur dari klinik itu sendiri. Untuk memberi akses portal lagi, kirim undangan baru.',
                 confirmLabel: 'Cabut akses',
                 destructive: true,
             })
@@ -291,6 +319,23 @@ export function PortalAccessSection({
                         minWidth: 200,
                     },
                     {
+                        id: 'tenant',
+                        header: 'Klinik',
+                        cell: (row) => (
+                            <DataTableText>{row.tenant_name}</DataTableText>
+                        ),
+                        minWidth: 160,
+                    },
+                    {
+                        id: 'role',
+                        header: 'Peran',
+                        cell: (row) => (
+                            <DataTableText>
+                                {row.admin ? 'Admin' : 'Anggota'}
+                            </DataTableText>
+                        ),
+                    },
+                    {
                         id: 'status',
                         header: 'Status',
                         cell: (row) => {
@@ -321,6 +366,7 @@ export function PortalAccessSection({
             {inviting && (
                 <InviteDialog
                     clientId={clientId}
+                    tenants={tenants}
                     onClose={() => setInviting(false)}
                     onSent={(result) => void sent(result)}
                 />

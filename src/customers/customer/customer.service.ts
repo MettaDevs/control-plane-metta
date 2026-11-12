@@ -175,9 +175,17 @@ export async function createCustomer(
                 "insert into clients (id, legal_name, slug, status, created_at, updated_at) values ($1, $2, $3, 'active', now() at time zone 'utc', now() at time zone 'utc')",
                 [ids.client, input.legal_name, input.slug],
             );
+            // first_admin_user_id: id pengguna klinik admin pertama, yang dibuat worker dari parameter provision. Undangan
+            // admin menautkan akun SSO penerimanya ke pengguna ini.
             await db.execute(
-                "insert into tenants (id, client_id, name, slug, status, created_at, updated_at) values ($1, $2, $3, $4, 'active', now() at time zone 'utc', now() at time zone 'utc')",
-                [ids.tenant, ids.client, input.legal_name, input.slug],
+                "insert into tenants (id, client_id, name, slug, status, first_admin_user_id, created_at, updated_at) values ($1, $2, $3, $4, 'active', $5, now() at time zone 'utc', now() at time zone 'utc')",
+                [
+                    ids.tenant,
+                    ids.client,
+                    input.legal_name,
+                    input.slug,
+                    ids.admin,
+                ],
             );
         } catch (error) {
             if (sqlErrorCode(error) === '23505')
@@ -298,6 +306,7 @@ export const operationNameSchema = z.enum([
     'restore',
     'purge',
     'sync_entitlements',
+    'sync_identities',
 ]);
 export const operationStatusSchema = z.enum([
     'requested',

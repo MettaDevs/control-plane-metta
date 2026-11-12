@@ -46,6 +46,10 @@ info:
       disiapkan. Penutupan `succeeded` mencatat `parameters.modules` sebagai yang sudah diterapkan; status lingkungan
       tidak berubah apa pun hasilnya. Operasi `sync_entitlements` yang sukses tidak menahan antrean berikutnya; yang
       gagal ditahan sejam seperti `expire`.
+    - Operasi `sync_identities` diantrekan dengan cara yang sama untuk lingkungan `active` yang daftar akun SSO
+      tenant-nya berbeda dari yang terakhir berhasil diterapkan di sana, termasuk lingkungan yang baru selesai
+      disiapkan. Penutupan `succeeded` mencatat `parameters.identities` sebagai yang sudah diterapkan; status lingkungan
+      tidak berubah apa pun hasilnya.
 
     ## Operasi
 
@@ -72,6 +76,12 @@ info:
       dipasang bila belum (migration module, catatan pemasangan, duty untuk role pemilik) dan hak pakainya diberi
       tanggal berakhir `ends_on` (hari terakhir boleh dipakai; null berarti tanpa batas). Hak module yang tidak ada di
       daftar dicabut. Data yang dibuat dengan module itu tidak disentuh. Parameternya `SyncEntitlementsParameters`.
+    - `sync_identities`: menautkan akun SSO ke pengguna klinik di database lingkungan, supaya pengguna yang sudah login
+      di penyedia SSO masuk ke klinik lewat `/sso/start` tanpa password. Hanya menambah: identitas yang sudah tertaut
+      tidak diubah, dan identitas yang tidak lagi ada di daftar tidak dilepas. Dengan `user_id`, identitas ditautkan ke
+      pengguna klinik itu (admin pertama, dibuat `provision` dari `admin.id`). Dengan `user_id` null, worker membuat
+      pengguna klinik tanpa password dengan keanggotaan tenant tanpa role, lalu menautkannya; role diberi admin klinik
+      di dalam klinik. Parameternya `SyncIdentitiesParameters`.
     ## Laporan host
 
     Worker melapor setiap beberapa menit, dan sekali saat mulai, lewat `POST /report`: rilis image yang ia jalankan,
@@ -251,7 +261,7 @@ components:
           format: uuid
         operation:
           type: string
-          enum: [provision, migrate, convert, expire, restore, purge, sync_entitlements]
+          enum: [provision, migrate, convert, expire, restore, purge, sync_entitlements, sync_identities]
         environment_id:
           type: string
           format: uuid
@@ -259,7 +269,7 @@ components:
           type: string
           format: date-time
         parameters:
-          description: '`ProvisionParameters` untuk `provision`, `MigrateParameters` untuk `migrate`, `ConvertParameters` untuk `convert`, `ExpireParameters` untuk `expire`, `RestoreParameters` untuk `restore`, `PurgeParameters` untuk `purge`, `SyncEntitlementsParameters` untuk `sync_entitlements`.'
+          description: '`ProvisionParameters` untuk `provision`, `MigrateParameters` untuk `migrate`, `ConvertParameters` untuk `convert`, `ExpireParameters` untuk `expire`, `RestoreParameters` untuk `restore`, `PurgeParameters` untuk `purge`, `SyncEntitlementsParameters` untuk `sync_entitlements`, `SyncIdentitiesParameters` untuk `sync_identities`.'
           oneOf:
             - $ref: '#/components/schemas/ProvisionParameters'
             - $ref: '#/components/schemas/MigrateParameters'
@@ -268,6 +278,7 @@ components:
             - $ref: '#/components/schemas/RestoreParameters'
             - $ref: '#/components/schemas/PurgeParameters'
             - $ref: '#/components/schemas/SyncEntitlementsParameters'
+            - $ref: '#/components/schemas/SyncIdentitiesParameters'
     ProvisionParameters:
       description: |
         Permintaan penyiapan operations-metta (`provisionRequestSchema` di `src/platform/environment/` repo itu),
@@ -399,6 +410,43 @@ components:
                 description: Hari terakhir module boleh dipakai; null berarti tanpa batas.
                 type: [string, 'null']
                 format: date
+    SyncIdentitiesParameters:
+      type: object
+      additionalProperties: false
+      required: [tenant_id, database, identities]
+      properties:
+        tenant_id:
+          type: string
+          format: uuid
+        database:
+          description: Database lingkungan; null berarti database bersama runtime.
+          type: [string, 'null']
+          pattern: '^[a-z][a-z0-9_]{0,62}$'
+        identities:
+          description: |
+            Seluruh akun SSO hidup tenant, urut waktu ditautkan. Daftar ini hanya bertambah selama akun tidak dihapus
+            dari control plane; mencabut akses portal tidak mengeluarkan akun dari daftar.
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [issuer, subject, email, name, user_id]
+            properties:
+              issuer:
+                description: '`iss` penyedia SSO.'
+                type: string
+              subject:
+                description: '`sub` akun di penyedia SSO.'
+                type: string
+              email:
+                description: Email dari ID token saat undangan diterima; hanya untuk tampilan, tidak pernah untuk mencocokkan.
+                type: [string, 'null']
+              name:
+                type: [string, 'null']
+              user_id:
+                description: Pengguna klinik yang sudah ada untuk ditautkan; null berarti worker membuat pengguna baru tanpa role.
+                type: [string, 'null']
+                format: uuid
     HostReport:
       type: object
       additionalProperties: false

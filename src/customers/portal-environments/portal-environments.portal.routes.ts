@@ -10,9 +10,9 @@ export function portalEnvironmentRoutes(
         listEnvironments: session.clientProcedure
             .route({ method: 'GET', path: '/api/v1/environments' })
             .handler(async ({ context }) => ({
-                customers: await listPortalEnvironments(
+                tenant: await listPortalEnvironments(
                     context.db,
-                    context.identity,
+                    context.tenant.tenant_id,
                     config.OPERATIONS_URL,
                 ),
             })),

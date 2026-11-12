@@ -76,6 +76,8 @@ export function operationName(operation: Operation['operation']): string {
             return 'Pembuangan';
         case 'sync_entitlements':
             return 'Penerapan module';
+        case 'sync_identities':
+            return 'Penautan akun SSO';
         default: {
             const unknown: never = operation;
             return unknown;
