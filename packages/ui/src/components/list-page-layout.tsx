@@ -40,9 +40,10 @@ function ListPageLayout({
             {filters != null && <div className="shrink-0 pt-3">{filters}</div>}
             <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden lg:flex-row">
                 {filterSide === 'left' ? filterPanel : null}
+                {/* `pt-3` memberi jarak antara toolbar dan header tabel, sama dengan daftar CoreERP (Vendor, modul aset). */}
                 <div
                     data-slot="list-page-content"
-                    className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+                    className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden pt-3"
                 >
                     <TableScrollContext.Provider value="viewport">
                         {children}
