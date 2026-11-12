@@ -96,6 +96,17 @@ export async function unlinkIdentity(
     issuer: string,
 ): Promise<void> {
     await db.transaction(async () => {
+        // Operator tanpa password hanya bisa masuk lewat SSO; melepas tautannya mengunci ia keluar dari konsol.
+        const operator = await db.one(
+            z.object({ has_password: z.boolean() }),
+            'select password is not null as has_password from operators where id = $1 for update',
+            [actor.operatorId],
+        );
+        if (!operator?.has_password)
+            throw new HttpFailure(409, {
+                message:
+                    'Akun ini hanya bisa masuk lewat SSO, jadi tautannya tidak bisa dilepas.',
+            });
         const removed = await db.execute(
             `update operator_identities set deleted_at = now() at time zone 'utc', updated_at = now() at time zone 'utc'
              where operator_id = $1 and issuer = $2 and deleted_at is null`,

@@ -37,7 +37,7 @@ export function UserMenuContent({
     onLinkSso,
 }: {
     operator: Operator;
-    sso: { linked: boolean } | null;
+    sso: { linked: boolean; has_password: boolean } | null;
     onLinkSso: () => void;
 }) {
     const queryClient = useQueryClient();
@@ -73,7 +73,7 @@ export function UserMenuContent({
                 </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            {sso && !sso.linked && (
+            {sso && !sso.linked && sso.has_password && (
                 <DropdownMenuItem
                     className="cursor-pointer"
                     onSelect={onLinkSso}
@@ -82,7 +82,7 @@ export function UserMenuContent({
                     Tautkan akun SSO
                 </DropdownMenuItem>
             )}
-            {sso?.linked && (
+            {sso?.linked && sso.has_password && (
                 <DropdownMenuItem
                     className="cursor-pointer"
                     onSelect={() => void unlink()}

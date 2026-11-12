@@ -31,6 +31,10 @@ function ssoErrorText(reason: string): string {
     switch (reason) {
         case 'not-linked':
             return 'Akun SSO ini belum ditautkan ke operator mana pun. Login dengan email dan password, lalu tautkan akun SSO Anda.';
+        case 'invitation-invalid':
+            return 'Undangan ini sudah tidak berlaku. Mungkin sudah dipakai, dibatalkan, atau lewat masa berlakunya. Minta undangan baru kepada operator yang mengundang Anda.';
+        case 'invitation-email-taken':
+            return 'Email akun SSO Anda dan email undangan sudah dipakai operator lain. Minta operator yang mengundang Anda untuk memeriksanya.';
         case 'invalid-ceremony':
             return 'Login SSO sudah kedaluwarsa atau tidak lengkap. Coba lagi.';
         case 'provider-unreachable':

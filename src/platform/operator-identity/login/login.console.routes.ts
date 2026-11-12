@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { Config } from '../../config/index.ts';
 import {
     authenticate,
+    hasPassword,
     revokeSessions,
     twoFactorEnabled,
 } from '../operator.service.ts';
@@ -81,13 +82,19 @@ export function loginRoutes(config: Config, session: ConsoleSession) {
                     context.db,
                     context.operator.id,
                 ),
-                // null bila SSO konsol tidak disetel; selain itu, apakah operator ini sudah menautkan akun SSO-nya.
+                // null bila SSO konsol tidak disetel; selain itu, apakah operator ini sudah menautkan akun SSO-nya, dan
+                // apakah ia punya password: operator tanpa password hanya bisa masuk lewat SSO, jadi tautannya tidak
+                // ditawarkan untuk dilepas atau dibuat ulang (keduanya meminta password).
                 sso: config.sso
                     ? {
                           linked: await isLinked(
                               context.db,
                               context.operator.id,
                               config.sso.issuer,
+                          ),
+                          has_password: await hasPassword(
+                              context.db,
+                              context.operator.id,
                           ),
                       }
                     : null,

@@ -6,6 +6,8 @@ import { page as customersCustomerCustomersPage } from './customers/customer/cus
 import { page as customersEntitlementModulesPage } from './customers/entitlement/modules.console.page.tsx';
 import { page as customersPackageModuleGroupsPage } from './customers/package/module-groups.console.page.tsx';
 import { page as environmentsRuntimeHostRuntimeHostsPage } from './environments/runtime-host/runtime-hosts.console.page.tsx';
+import { page as platformOperatorIdentityInvitationInvitationPage } from './platform/operator-identity/invitation/invitation.console.page.tsx';
+import { page as platformOperatorIdentityInvitationOperatorsPage } from './platform/operator-identity/invitation/operators.console.page.tsx';
 import { page as platformShellLoginPage } from './platform/shell/login.console.page.tsx';
 import { page as releasesReleasesPage } from './releases/releases.console.page.tsx';
 import { page as sitesSiteSitePage } from './sites/site/site.console.page.tsx';
@@ -54,6 +56,26 @@ const environmentsRuntimeHostRuntimeHostsRoute = createRoute({
     staticData: { title: environmentsRuntimeHostRuntimeHostsPage.title },
 });
 
+const platformOperatorIdentityInvitationInvitationRoute = createRoute({
+    getParentRoute: () => authLayoutRoute,
+    path: platformOperatorIdentityInvitationInvitationPage.path,
+    component: platformOperatorIdentityInvitationInvitationPage.component,
+    validateSearch:
+        platformOperatorIdentityInvitationInvitationPage.validateSearch,
+    staticData: {
+        title: platformOperatorIdentityInvitationInvitationPage.title,
+    },
+});
+
+const platformOperatorIdentityInvitationOperatorsRoute = createRoute({
+    getParentRoute: () => appLayoutRoute,
+    path: platformOperatorIdentityInvitationOperatorsPage.path,
+    component: platformOperatorIdentityInvitationOperatorsPage.component,
+    staticData: {
+        title: platformOperatorIdentityInvitationOperatorsPage.title,
+    },
+});
+
 const platformShellLoginRoute = createRoute({
     getParentRoute: () => authLayoutRoute,
     path: platformShellLoginPage.path,
@@ -91,11 +113,15 @@ const routeTree = rootRoute.addChildren([
         customersEntitlementModulesRoute,
         customersPackageModuleGroupsRoute,
         environmentsRuntimeHostRuntimeHostsRoute,
+        platformOperatorIdentityInvitationOperatorsRoute,
         releasesReleasesRoute,
         sitesSiteSiteRoute,
         sitesSiteSitesRoute,
     ]),
-    authLayoutRoute.addChildren([platformShellLoginRoute]),
+    authLayoutRoute.addChildren([
+        platformOperatorIdentityInvitationInvitationRoute,
+        platformShellLoginRoute,
+    ]),
 ]);
 
 const router = createRouter({ ...routerOptions, routeTree });

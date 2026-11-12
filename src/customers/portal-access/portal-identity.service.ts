@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { recordAudit } from '../../platform/audit/index.ts';
 import type { Database } from '../../platform/database/index.ts';
-import { hashInvitationToken } from './portal-access.service.ts';
+import { hashInvitationToken } from '../../platform/oidc/index.ts';
 
 // Identitas SSO pemegang akses portal. Akses selalu dicari lewat pasangan iss dan sub, tidak pernah lewat email.
 export type PortalIdentity = { issuer: string; subject: string };

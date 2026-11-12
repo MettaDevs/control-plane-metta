@@ -94,6 +94,7 @@
             "route": {
                 "method": "GET",
                 "path": "/sso/start",
+                "inputStructure": "detailed",
                 "outputStructure": "detailed"
             }
         }
@@ -139,6 +140,59 @@
             "route": {
                 "method": "POST",
                 "path": "/sso/backchannel-logout",
+                "inputStructure": "detailed"
+            }
+        }
+    },
+    "listOperators": {
+        "~orpc": {
+            "errorMap": {},
+            "meta": {},
+            "route": { "method": "GET", "path": "/api/v1/operators" }
+        }
+    },
+    "inviteOperator": {
+        "~orpc": {
+            "errorMap": {},
+            "meta": {},
+            "route": {
+                "method": "POST",
+                "path": "/api/v1/operator-invitations",
+                "inputStructure": "detailed",
+                "successStatus": 201
+            }
+        }
+    },
+    "resendOperatorInvitation": {
+        "~orpc": {
+            "errorMap": {},
+            "meta": {},
+            "route": {
+                "method": "POST",
+                "path": "/api/v1/operator-invitations/{invitation}/resend",
+                "inputStructure": "detailed"
+            }
+        }
+    },
+    "cancelOperatorInvitation": {
+        "~orpc": {
+            "errorMap": {},
+            "meta": {},
+            "route": {
+                "method": "DELETE",
+                "path": "/api/v1/operator-invitations/{invitation}",
+                "inputStructure": "detailed",
+                "successStatus": 204
+            }
+        }
+    },
+    "showOperatorInvitation": {
+        "~orpc": {
+            "errorMap": {},
+            "meta": {},
+            "route": {
+                "method": "GET",
+                "path": "/api/v1/invitation",
                 "inputStructure": "detailed"
             }
         }
