@@ -309,7 +309,7 @@ export function NewCustomerCard({
                                 </FormControl>
                                 <FormControl
                                     error={error('slug')}
-                                    hint="Slug menjadi bagian depan alamat klinik. Isinya huruf kecil, angka, dan tanda hubung. Slug tidak pernah dipakai ulang, juga setelah customer-nya dihapus, jadi pilih dengan hati-hati."
+                                    hint="Slug menjadi bagian depan alamat tenant. Isinya huruf kecil, angka, dan tanda hubung. Slug tidak pernah dipakai ulang, juga setelah customer-nya dihapus, jadi pilih dengan hati-hati."
                                 >
                                     <Input
                                         label="Slug"
@@ -328,7 +328,7 @@ export function NewCustomerCard({
                                 </FormControl>
                                 <FormControl
                                     error={error('admin.name')}
-                                    hint="Admin pertama klinik. Ia login dengan password sementara yang tampil sekali setelah customer dibuat."
+                                    hint="Admin pertama tenant ini. Ia login dengan password sementara yang tampil sekali setelah customer dibuat."
                                 >
                                     <Input
                                         label="Nama admin"
@@ -359,7 +359,7 @@ export function NewCustomerCard({
                                         error('environment.kind') ??
                                         error('environment')
                                     }
-                                    hint="Produksi untuk klinik yang sudah memakai sistem sungguhan. Demo untuk percobaan dan berhenti pada tanggal berakhir."
+                                    hint="Produksi untuk tenant yang sudah memakai sistem sungguhan. Demo untuk percobaan dan berhenti pada tanggal berakhir."
                                 >
                                     <div data-error-field="environment">
                                         <Select
@@ -390,7 +390,7 @@ export function NewCustomerCard({
                                 </FormControl>
                                 <FormControl
                                     error={error('runtime_host_id')}
-                                    hint="Server tempat database klinik ini dibuat. Biarkan Otomatis supaya dipilih server aktif yang paling sedikit isinya."
+                                    hint="Server tempat database tenant ini dibuat. Biarkan Otomatis supaya dipilih server aktif yang paling sedikit isinya."
                                 >
                                     <div data-error-field="runtime_host_id">
                                         <Select

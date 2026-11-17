@@ -17,7 +17,7 @@ const route = getRouteApi('/_auth/invitation');
 const invalidText =
     'Undangan ini sudah tidak berlaku. Mungkin sudah dipakai, dibatalkan, atau lewat masa berlakunya. Minta undangan baru kepada pihak yang mengundang Anda.';
 
-// Halaman tujuan tautan di email undangan. Akun SSO yang dipakai untuk masuk dari sini tersambung ke klinik pengundang;
+// Halaman tujuan tautan di email undangan. Akun SSO yang dipakai untuk masuk dari sini tersambung ke organisasi pengundang;
 // tautan itulah buktinya, bukan kecocokan email.
 function InvitationPage(): ReactNode {
     const { token } = route.useSearch();
@@ -71,7 +71,7 @@ function InvitationPage(): ReactNode {
         );
     return (
         <AuthCard
-            title="Undangan portal klinik"
+            title="Undangan portal organisasi"
             description={`Anda diundang untuk mengelola ${invitation.data.legal_name} lewat portal ini.`}
         >
             <div className="flex flex-col gap-4">

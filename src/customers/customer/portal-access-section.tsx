@@ -65,7 +65,7 @@ function InviteDialog({
     onSent: (sent: Sent) => void;
 }): ReactNode {
     const content = useRef<HTMLDivElement>(null);
-    // Customer dengan satu klinik langsung memilih klinik itu.
+    // Customer dengan satu tenant langsung memilih tenant itu.
     const [tenantId, setTenantId] = useState(
         tenants.length === 1 ? tenants[0]!.id : '',
     );
@@ -109,15 +109,15 @@ function InviteDialog({
                         <DialogDescription>
                             Penyedia SSO mengirim email berisi tautan undangan.
                             Penerima membukanya, lalu login SSO di portal dan
-                            mendapat akun di klinik tanpa role. Tautan berlaku 7
-                            hari dan hanya bisa dipakai sekali.
+                            mendapat akun di tenant itu tanpa role. Tautan
+                            berlaku 7 hari dan hanya bisa dipakai sekali.
                         </DialogDescription>
                     </DialogHeader>
                     <DialogBody>
                         <FormGrid columns={1}>
                             <FormControl error={errors.tenant_id?.[0]}>
                                 <Select
-                                    label="Klinik"
+                                    label="Tenant"
                                     required
                                     items={tenants.map((tenant) => ({
                                         value: tenant.id,
@@ -252,7 +252,7 @@ export function PortalAccessSection({
             await confirm({
                 title: `Cabut akses portal ${who}?`,
                 description:
-                    'Akun SSO ini tidak bisa lagi masuk portal klinik ini. Akunnya di dalam klinik tidak ikut dicabut; atur dari klinik itu sendiri. Untuk memberi akses portal lagi, kirim undangan baru.',
+                    'Akun SSO ini tidak bisa lagi masuk portal untuk tenant ini. Akunnya di aplikasi tenant tidak ikut dicabut; atur dari aplikasi tenant itu sendiri. Untuk memberi akses portal lagi, kirim undangan baru.',
                 confirmLabel: 'Cabut akses',
                 destructive: true,
             })
@@ -320,7 +320,7 @@ export function PortalAccessSection({
                     },
                     {
                         id: 'tenant',
-                        header: 'Klinik',
+                        header: 'Tenant',
                         cell: (row) => (
                             <DataTableText>{row.tenant_name}</DataTableText>
                         ),

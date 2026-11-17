@@ -437,7 +437,7 @@ function SitePage(): ReactNode {
                     <Fact label="Status">
                         <Badge variant={state.variant}>{state.label}</Badge>
                     </Fact>
-                    <Fact label="Klinik">{site.tenant_name}</Fact>
+                    <Fact label="Tenant">{site.tenant_name}</Fact>
                     <Fact label="Edisi">{site.edition}</Fact>
                     <Fact label="Rilis terpasang">
                         {site.reported_release ?? '-'}

@@ -28,7 +28,7 @@ function LoginPage(): ReactNode {
     const search = route.useSearch();
     return (
         <AuthCard
-            title="Masuk ke portal klinik"
+            title="Masuk ke portal organisasi"
             description="Gunakan akun SSO yang Anda pakai saat menerima undangan."
         >
             <div className="flex flex-col gap-6">
