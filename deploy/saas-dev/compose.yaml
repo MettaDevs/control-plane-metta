@@ -48,8 +48,32 @@ services:
     image: metta-saas-dev/operations:${OPS_TAG}
     restart: unless-stopped
     env_file: secrets/ops.env
+    # Pembuat PDF dokumen cetak operations-metta (src/platform/reporting/). Tanpa ini cetak hanya berupa Word.
+    environment:
+      RENDERER_URL: http://ops-renderer:3000
+    networks: [default, renderer]
     ports: ['172.17.0.1:9103:8000']
-    depends_on: { ops-db: { condition: service_healthy } }
+    depends_on:
+      ops-db: { condition: service_healthy }
+      ops-renderer: { condition: service_healthy }
+  # Gotenberg (LibreOffice) mengubah dokumen cetak Word menjadi PDF. Tanpa status dan tanpa tenant; satu untuk host
+  # runtime ini. Hanya di jaringan renderer yang tidak punya jalan keluar, supaya layout unggahan tenant tidak dapat
+  # memancingnya mengambil sumber dari luar. LibreOffice dinyalakan saat container mulai (sekitar 13 detik), bukan
+  # pada klik cetak pertama.
+  ops-renderer:
+    image: gotenberg/gotenberg:8.36.0
+    restart: unless-stopped
+    command:
+      - gotenberg
+      - --libreoffice-auto-start=true
+      - --libreoffice-restart-after=50
+      - --chromium-disable-routes=true
+      - --api-timeout=60s
+    networks: [renderer]
+    healthcheck:
+      test: [CMD, curl, -fs, http://localhost:3000/health]
+      interval: 5s
+      retries: 30
   ops-worker:
     image: metta-saas-dev/operations:${OPS_TAG}
     restart: unless-stopped
@@ -59,6 +83,9 @@ services:
     depends_on:
       ops-db: { condition: service_healthy }
       cp-agent: { condition: service_started }
+networks:
+  renderer:
+    internal: true
 volumes:
   cp-db:
   ops-db:
