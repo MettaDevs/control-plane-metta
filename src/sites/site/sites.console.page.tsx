@@ -42,7 +42,7 @@ function SitesPage(): ReactNode {
                     },
                     {
                         id: 'tenant',
-                        header: 'Klinik',
+                        header: 'Tenant',
                         cell: (site) => (
                             <DataTableText>{site.tenant_name}</DataTableText>
                         ),

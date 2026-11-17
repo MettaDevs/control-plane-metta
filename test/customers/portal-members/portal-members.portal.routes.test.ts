@@ -259,7 +259,7 @@ describe.skipIf(!process.env.DB_HOST)('anggota dan tenant aktif portal', () => {
         expect(email.headers.get('x-client-id')).toBe(stub.clientId);
         expect(email.body).toMatchObject({
             recipient_email: 'perawat@anggota.test',
-            role_name: 'Anggota klinik',
+            role_name: 'Anggota organisasi',
             invited_by: `Nama ${adminSubject.slice(-6)}`,
             accept_url: sent.accept_url,
         });

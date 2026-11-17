@@ -101,9 +101,9 @@ function InviteDialog({
                         <DialogDescription>
                             Kami mengirim email berisi tautan undangan. Penerima
                             membukanya lalu masuk dengan akun SSO, dan mendapat
-                            akun di klinik ini tanpa hak akses apa pun. Atur hak
-                            aksesnya dari dalam klinik. Tautan berlaku 7 hari
-                            dan hanya bisa dipakai sekali.
+                            akun di organisasi ini tanpa hak akses apa pun. Atur
+                            hak aksesnya dari dalam aplikasi. Tautan berlaku 7
+                            hari dan hanya bisa dipakai sekali.
                         </DialogDescription>
                     </DialogHeader>
                     <DialogBody>
@@ -153,7 +153,7 @@ function InviteDialog({
     );
 }
 
-// Anggota klinik aktif yang bisa masuk portal, dan undangan yang belum dipakai, dalam satu daftar. Hanya admin klinik
+// Anggota organisasi aktif yang bisa masuk portal, dan undangan yang belum dipakai, dalam satu daftar. Hanya admin organisasi
 // yang mengundang, mengirim ulang, dan membatalkan.
 function MembersPage(): ReactNode {
     const queryClient = useQueryClient();
@@ -213,7 +213,7 @@ function MembersPage(): ReactNode {
                         title={
                             data.can_invite
                                 ? undefined
-                                : 'Hanya admin klinik ini yang bisa mengundang anggota.'
+                                : 'Hanya admin organisasi ini yang bisa mengundang anggota.'
                         }
                         onClick={() => setInviting(true)}
                     />

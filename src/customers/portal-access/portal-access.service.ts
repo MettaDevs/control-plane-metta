@@ -52,7 +52,7 @@ async function inviterName(db: Database, inviter: Inviter): Promise<string> {
         return (
             inviter.portalUser.name ??
             inviter.portalUser.email ??
-            'Admin klinik'
+            'Admin organisasi'
         );
     const operator = await db.one(
         z.object({ name: z.string() }),
@@ -63,8 +63,8 @@ async function inviterName(db: Database, inviter: Inviter): Promise<string> {
 }
 
 const roleNames = {
-    admin: 'Admin klinik',
-    member: 'Anggota klinik',
+    admin: 'Admin organisasi',
+    member: 'Anggota organisasi',
 } as const satisfies Record<InvitationKind, string>;
 
 const now = "now() at time zone 'utc'";
@@ -124,7 +124,7 @@ async function issueAndSend(
         acceptUrl,
         expiresInDays: invitationDays,
         invitedBy: await inviterName(db, inviter),
-        appName: 'Portal klien',
+        appName: 'Portal organisasi',
         roleName: roleNames[invitation.kind],
     });
     if (failure === null)
@@ -168,7 +168,7 @@ export async function inviteToPortal(
             if (!tenant)
                 throw new HttpFailure(404, {
                     error: 'tenant_not_found',
-                    message: 'Klinik ini tidak ditemukan pada customer ini.',
+                    message: 'Tujuan undangan ini tidak ditemukan.',
                 });
             const row = await db.one(
                 invitationRowSchema,

@@ -21,12 +21,12 @@ import { useAppearance } from './use-appearance.ts';
 import { useDocumentTitle } from './use-document-title.ts';
 
 // Bingkai portal: satu header dan isi halaman. Portal baru punya dua halaman, jadi menunya ada di header, bukan di
-// samping. Klinik aktif tampil di kanan atas, seperti penunjuk organisasi di pusat admin Microsoft 365.
+// samping. Organisasi aktif tampil di kanan atas, seperti penunjuk organisasi di pusat admin Microsoft 365.
 export function PortalLayout(): ReactNode {
     const { data: me } = useSuspenseQuery(meQuery);
     const queryClient = useQueryClient();
     const { resolvedAppearance, updateAppearance } = useAppearance();
-    useDocumentTitle('Portal klinik');
+    useDocumentTitle('Portal organisasi');
     const shownName = me.name ?? me.email ?? 'Akun Anda';
     const themeLabel =
         resolvedAppearance === 'dark'

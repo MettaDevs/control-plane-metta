@@ -57,7 +57,7 @@ export function portalAccountRoutes(session: PortalSession) {
                 )
                     throw new HttpFailure(404, {
                         error: 'tenant_not_found',
-                        message: 'Klinik ini tidak bisa Anda buka.',
+                        message: 'Organisasi ini tidak bisa Anda buka.',
                     });
                 session.chooseTenant(context, input.body.tenant_id);
             }),

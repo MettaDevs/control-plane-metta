@@ -351,7 +351,7 @@ function EnvironmentSection({
                                     void ask('convert', {
                                         title: 'Jadikan demo ini produksi?',
                                         description:
-                                            'Seluruh data yang diisi selama demo ikut menjadi data produksi. Alamatnya pindah dari alamat demo ke alamat produksi klinik ini, jadi pengguna perlu login lagi di alamat baru. Tanggal berakhir demo dilepas. Produksi tidak bisa dikembalikan menjadi demo.',
+                                            'Seluruh data yang diisi selama demo ikut menjadi data produksi. Alamatnya pindah dari alamat demo ke alamat produksi tenant ini, jadi pengguna perlu login lagi di alamat baru. Tanggal berakhir demo dilepas. Produksi tidak bisa dikembalikan menjadi demo.',
                                         confirmLabel: 'Jadikan produksi',
                                     })
                                 }
