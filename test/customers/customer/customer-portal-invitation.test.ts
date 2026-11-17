@@ -97,7 +97,7 @@ describe.skipIf(!process.env.DB_HOST)(
                 recipient_email: 'kepala@klinik.test',
                 recipient_name: 'Kepala Klinik',
                 accept_url: created.portal_invitation.accept_url,
-                role_name: 'Admin klinik',
+                role_name: 'Admin organisasi',
             });
             const [invitation] = await pool.unsafe(
                 'select client_id, tenant_id, kind, notified_at is not null as notified from client_portal_invitations where id = $1',

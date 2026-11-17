@@ -142,7 +142,7 @@ describe.skipIf(!process.env.DB_HOST)('akses portal klien', () => {
             recipient_name: 'Kepala Klinik',
             accept_url: sent.accept_url,
             invited_by: 'Operator Portal',
-            role_name: 'Anggota klinik',
+            role_name: 'Anggota organisasi',
             expires_in_days: 7,
         });
         const first = await stored(sent.id);

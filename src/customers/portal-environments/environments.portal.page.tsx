@@ -19,7 +19,7 @@ import {
 
 type Tenant = ApiOutput<'listEnvironments'>['tenant'];
 
-// Module yang boleh dipakai klinik aktif. Berlaku untuk semua lingkungannya, jadi ditulis sekali di atas daftar, bukan
+// Module yang boleh dipakai organisasi aktif. Berlaku untuk semua lingkungannya, jadi ditulis sekali di atas daftar, bukan
 // di setiap baris.
 function ModuleSummary({ tenant }: { tenant: Tenant }): ReactNode {
     return (

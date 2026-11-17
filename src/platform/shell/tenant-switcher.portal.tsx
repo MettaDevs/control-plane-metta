@@ -37,7 +37,7 @@ function groupByCustomer(tenants: Tenant[]) {
     return [...groups.values()];
 }
 
-// Klinik yang sedang dibuka di portal, di pojok kanan atas, dengan daftar setiap klinik yang bisa dibuka akun ini.
+// Organisasi yang sedang dibuka di portal, di pojok kanan atas, dengan daftar setiap organisasi yang bisa dibuka akun ini.
 // Pilihan disimpan server di cookie dan diperiksa ulang setiap request.
 export function TenantSwitcher({ me }: { me: Me }): ReactNode {
     const queryClient = useQueryClient();
@@ -53,10 +53,12 @@ export function TenantSwitcher({ me }: { me: Me }): ReactNode {
         setPending(true);
         try {
             await api.chooseTenant({ body: { tenant_id: tenantId } });
-            // Semua data portal milik klinik aktif, jadi semuanya dimuat ulang.
+            // Semua data portal milik organisasi aktif, jadi semuanya dimuat ulang.
             await queryClient.invalidateQueries();
         } catch (caught) {
-            toast.error(errorText(caught, 'Klinik belum berhasil diganti.'));
+            toast.error(
+                errorText(caught, 'Organisasi belum berhasil diganti.'),
+            );
         } finally {
             setPending(false);
         }
@@ -71,7 +73,7 @@ export function TenantSwitcher({ me }: { me: Me }): ReactNode {
                     size="sm"
                     className="max-w-64"
                     disabled={pending}
-                    aria-label={`Klinik aktif: ${active.name}. Ganti klinik`}
+                    aria-label={`Organisasi aktif: ${active.name}. Ganti organisasi`}
                 >
                     <Building2 />
                     <span className="truncate">{active.name}</span>
@@ -88,7 +90,7 @@ export function TenantSwitcher({ me }: { me: Me }): ReactNode {
                             {index > 0 && <DropdownMenuSeparator />}
                             <DropdownMenuGroup>
                                 <DropdownMenuLabel className="text-xs text-muted-foreground">
-                                    {several ? group.legalName : 'Klinik'}
+                                    {several ? group.legalName : 'Organisasi'}
                                 </DropdownMenuLabel>
                                 {group.tenants.map((tenant) => (
                                     <DropdownMenuRadioItem

@@ -24,7 +24,7 @@ function adminOf(
     if (!tenant.is_admin)
         throw new HttpFailure(403, {
             error: 'not_tenant_admin',
-            message: 'Hanya admin klinik ini yang bisa mengundang anggota.',
+            message: 'Hanya admin organisasi ini yang bisa mengundang anggota.',
         });
     return {
         portalUser: {

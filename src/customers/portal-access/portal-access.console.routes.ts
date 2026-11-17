@@ -17,7 +17,7 @@ import {
 // Undangan dari konsol selalu undangan member ke satu tenant customer itu. Undangan admin hanya lahir saat customer
 // dibuat.
 const consoleInvitationSchema = invitationInputSchema.extend({
-    tenant_id: z.uuid('Pilih klinik tujuan undangan.'),
+    tenant_id: z.uuid('Pilih tenant tujuan undangan.'),
 });
 
 export function portalAccessConsoleRoutes(

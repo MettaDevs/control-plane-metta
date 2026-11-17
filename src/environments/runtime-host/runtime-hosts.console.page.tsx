@@ -134,7 +134,7 @@ function SettingsDialog({
                     <DialogHeader>
                         <DialogTitle>Pengaturan {host.name}</DialogTitle>
                         <DialogDescription>
-                            Menentukan apakah klinik baru boleh ditempatkan di
+                            Menentukan apakah tenant baru boleh ditempatkan di
                             server ini. Lingkungan yang sudah ada di sini tidak
                             terpengaruh.
                         </DialogDescription>
