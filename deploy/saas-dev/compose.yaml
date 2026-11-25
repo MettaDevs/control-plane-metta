@@ -61,14 +61,20 @@ services:
   # memancingnya mengambil sumber dari luar. LibreOffice dinyalakan saat container mulai (sekitar 13 detik), bukan
   # pada klik cetak pertama.
   ops-renderer:
-    image: gotenberg/gotenberg:8.36.0
+    image: gotenberg/gotenberg:9.10.0-libreoffice
     restart: unless-stopped
+    mem_limit: 1g
+    cpus: 2
     command:
       - gotenberg
       - --libreoffice-auto-start=true
       - --libreoffice-restart-after=50
-      - --chromium-disable-routes=true
-      - --api-timeout=60s
+      - --libreoffice-max-queue-size=10
+      - --libreoffice-max-memory=768MB
+      - --pdf-disable-routes=true
+      - --webhook-disable=true
+      - --api-disable-download-from=true
+      - --api-timeout=35s
     networks: [renderer]
     healthcheck:
       test: [CMD, curl, -fs, http://localhost:3000/health]
